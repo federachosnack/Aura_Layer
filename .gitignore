@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.installed.cfg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Build output
+build/
+dist/
+dist_temp/
+*.spec
+
+# Executables
+*.exe
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Project-specific user data
+characters/
+*.bak
+*_backup.*
+
+# AI/Agent documentation
+AGENTS.md
