@@ -10,11 +10,16 @@ import sys
 import time
 import shutil
 
-# Usa il Python del venv (nella cartella parent)
-project_root = os.path.dirname(os.path.dirname(__file__))
-python_exe = os.path.join(project_root, ".venv", "Scripts", "python.exe")
-if not os.path.exists(python_exe):
-    print(f"Errore: Python del venv non trovato in {python_exe}")
+# Determina l'interprete Python (usa il venv del progetto se presente, altrimenti sys.executable)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+venv_python = os.path.join(project_root, ".venv", "Scripts", "python.exe")
+
+if os.path.exists(venv_python):
+    python_exe = venv_python
+elif os.path.exists(sys.executable):
+    python_exe = sys.executable
+else:
+    print("Errore: Nessun interprete Python valido trovato.")
     sys.exit(1)
 
 # Configurazione build PyInstaller

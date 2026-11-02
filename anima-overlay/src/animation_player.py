@@ -53,7 +53,13 @@ class AnimationPlayer(QLabel):
     def start_animation(self):
         """Avvia il playback dell'animazione."""
         if self.frames and not self.timer.isActive():
-            self.timer.start(self.durations[0])
+            if self.fps and self.fps > 0:
+                interval = max(1, int(1000 / self.fps))
+            elif self.durations:
+                interval = self.durations[0]
+            else:
+                interval = 100
+            self.timer.start(interval)
             
     def stop_animation(self):
         """Ferma il playback dell'animazione."""
@@ -77,8 +83,10 @@ class AnimationPlayer(QLabel):
         self.timer.setInterval(interval)
 
     def set_fps(self, fps: int):
-        """Imposta il FPS personalizzato (None per durata nativa)."""
+        """Imposta il FPS personalizzato (None per durata nativa) e aggiorna immediatamente il timer."""
         self.fps = fps
+        if self.timer.isActive() and fps and fps > 0:
+            self.timer.setInterval(max(1, int(1000 / fps)))
         
     def set_size(self, width: int, height: int):
         """Imposta le dimensioni del player."""

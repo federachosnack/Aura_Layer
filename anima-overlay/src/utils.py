@@ -48,11 +48,17 @@ def migrate_from_local_if_needed() -> None:
             print(f"Errore durante la migrazione config: {e}")
 
 
+# Handle globale per mantenere in vita il mutex dell'istanza singola
+_instance_mutex = None
+
+
 def check_single_instance() -> bool:
     """
     Verifica se un'altra istanza dell'app è già in esecuzione usando mutex.
     Restituisce True se questa è l'unica istanza, False se ne esiste già una.
     """
+    global _instance_mutex
+
     # Nome univoco per il mutex
     mutex_name = "AuraLayer_SingleInstance_Mutex"
 
@@ -65,8 +71,8 @@ def check_single_instance() -> bool:
     GetLastError.argtypes = []
     GetLastError.restype = wintypes.DWORD
 
-    # Tenta di creare il mutex
-    mutex = CreateMutexW(None, False, mutex_name)
+    # Tenta di creare il mutex e mantieni il riferimento globale
+    _instance_mutex = CreateMutexW(None, False, mutex_name)
 
     if GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         # Il mutex esiste già, quindi c'è un'altra istanza in esecuzione
@@ -78,7 +84,8 @@ def check_single_instance() -> bool:
 def resource_path(relative_path: str) -> str:
     """
     Restituisce il percorso assoluto di una risorsa, funzionante sia in sviluppo che in PyInstaller.
-    Per PyInstaller, le risorse sono in _internal.
+    Per PyInstaller, le risorse sono in _MEIPASS.
+    In sviluppo cerca sia nella root del progetto sia nella sottocartella src/.
     """
     if getattr(sys, 'frozen', False):
         # Eseguito come PyInstaller bundle
@@ -87,4 +94,65 @@ def resource_path(relative_path: str) -> str:
         # Eseguito in sviluppo
         base_path = os.path.dirname(os.path.dirname(__file__))
 
-    return os.path.join(base_path, relative_path)
+    direct_path = os.path.join(base_path, relative_path)
+    if not os.path.exists(direct_path):
+        src_path = os.path.join(base_path, "src", relative_path)
+        if os.path.exists(src_path):
+            return src_path
+
+    return direct_path
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ('cbSize', wintypes.DWORD),
+        ('rcMonitor', wintypes.RECT),
+        ('rcWork', wintypes.RECT),
+        ('dwFlags', wintypes.DWORD)
+    ]
+
+
+def is_fullscreen_active(exclude_hwnds: Optional[list] = None) -> bool:
+    """
+    Rileva se una finestra in primo piano occupa l'intero schermo (es. gioco o video fullscreen).
+    Restituisce True se un'applicazione a tutto schermo è attiva, altrimenti False.
+    """
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+
+        if exclude_hwnds and hwnd in exclude_hwnds:
+            return False
+
+        # Ignora desktop di Windows e barra delle applicazioni
+        cls_buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls_buf, 256)
+        cls_name = cls_buf.value
+        if cls_name in ['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']:
+            return False
+
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return False
+
+        # MONITOR_DEFAULTTONEAREST = 2
+        hmon = user32.MonitorFromWindow(hwnd, 2)
+        if not hmon:
+            return False
+
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return False
+
+        m = mi.rcMonitor
+        # Verifica se la finestra copre interamente l'area fisica del monitor
+        if rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom:
+            if user32.IsWindowVisible(hwnd):
+                return True
+
+        return False
+    except Exception:
+        return False

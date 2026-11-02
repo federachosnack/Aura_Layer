@@ -13,7 +13,7 @@ from src.character import CharacterManager
 from src.tray_manager import TrayManager
 from src.config_manager import ConfigManager
 from src.launcher import LauncherWindow
-from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path
+from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path, is_fullscreen_active
 from src.translations import init_translations
 
 
@@ -70,7 +70,7 @@ class ActiveCharacter:
             self.behavior.position_signal.connect(self.window.move)
             self.window.drag_started.connect(lambda: self.behavior.set_dragging(True))
             self.window.position_changed.connect(self.behavior.update_position)
-            self.window.drag_ended.connect(lambda x, y: self.behavior.set_dragging(False))
+            self.window.drag_ended.connect(self._on_free_walk_drag_ended)
             self.behavior.start_behavior()
         elif self.character.behavior == "random_edge":
             self.behavior = RandomEdgeBehavior(width, height)
@@ -85,7 +85,32 @@ class ActiveCharacter:
             self.window.position_changed.connect(self.behavior.update_position)
             self.window.drag_ended.connect(lambda x, y: self.behavior.set_dragging(False))
             self.behavior.start_behavior()
-        # static: no behavior, only drag / static: nessun comportamento, solo drag
+        else:
+            # static: posizionamento fisso con salvataggio automatico della posizione al rilascio del drag
+            saved_x = self.character.config.get("pos_x")
+            saved_y = self.character.config.get("pos_y")
+            if saved_x is not None and saved_y is not None:
+                self.window.move(int(saved_x), int(saved_y))
+            else:
+                from src.behaviors import get_current_screen
+                screen = get_current_screen()
+                if screen:
+                    geom = screen.geometry()
+                    init_x = geom.x() + geom.width() - width - 40
+                    init_y = geom.y() + geom.height() - height
+                    self.window.move(init_x, init_y)
+
+            def on_static_drag_ended(x, y):
+                self.character.update_config(pos_x=x, pos_y=y)
+                self.character.save_config()
+
+            self.window.drag_ended.connect(on_static_drag_ended)
+
+    def _on_free_walk_drag_ended(self, x, y):
+        """Handle drag end for free walk: stop dragging and fall to ground if in air."""
+        if self.behavior and isinstance(self.behavior, FreeWalkBehavior):
+            self.behavior.set_dragging(False)
+            self.behavior.fall_to_bottom()
 
     def show(self):
         """Show the character / Mostra il personaggio."""
@@ -148,8 +173,6 @@ class AnimaOverlayApp:
         else:
             self.tray_manager = TrayManager(None)
 
-        self.tray_manager = TrayManager(self.translations)
-
         # Create launcher passing shared CharacterManager and translations / Crea launcher passando CharacterManager condiviso e traduzioni
         self.launcher = LauncherWindow(self.character_manager, self.config_manager, self.translations)
         self.launcher.character_launched.connect(self.on_launcher_launch)
@@ -158,11 +181,18 @@ class AnimaOverlayApp:
         self.launcher.character_renamed.connect(self.on_launcher_rename)
         self.launcher.character_updated.connect(self.on_launcher_update)
         self.launcher.character_lock_changed.connect(self.on_launcher_lock)
+        self.launcher.global_fps_changed.connect(self.on_global_fps_changed)
         self.launcher.quit_requested.connect(self.quit_app)
 
         # Active characters / Personaggi attivi
         self.active_characters: Dict[str, ActiveCharacter] = {}
         self.all_hidden = False  # State for show/hide all toggle / Stato per toggle mostra/nascondi tutti
+        self._fullscreen_paused = False
+
+        # Timer per pausa automatica se un'app/gioco va a tutto schermo (fullscreen detection)
+        self.fullscreen_timer = QTimer()
+        self.fullscreen_timer.timeout.connect(self._check_fullscreen)
+        self.fullscreen_timer.start(1500)
 
         # Connect tray signals / Connetti segnali tray
         self.tray_manager.quit_signal.connect(self.quit_app)
@@ -187,7 +217,10 @@ class AnimaOverlayApp:
 
         active_char = ActiveCharacter(character, self.app, self.config_manager)
         self.active_characters[character.name] = active_char
-        active_char.show()
+        if not self.all_hidden and not self._fullscreen_paused:
+            active_char.show()
+        else:
+            active_char.hide()
 
         # Update configuration / Aggiorna configurazione
         self.config_manager.add_active_character(character.name)
@@ -288,8 +321,55 @@ class AnimaOverlayApp:
             # Apply lock directly to existing window / Applica lock direttamente alla finestra esistente
             self.active_characters[character_name].window.set_click_through(locked)
 
+    def on_global_fps_changed(self, limit: int):
+        """Aggiorna il limite FPS in tempo reale per tutti i personaggi attivi."""
+        for active_char in self.active_characters.values():
+            char_fps = active_char.character.fps if active_char.character.fps is not None else 24
+            fps_to_use = char_fps
+            if limit > 0:
+                fps_to_use = min(fps_to_use, limit)
+            active_char.player.set_fps(fps_to_use)
+
+    def _check_fullscreen(self):
+        """Controlla se un'app o gioco è a tutto schermo e gestisce la pausa dei personaggi."""
+        enabled = self.config_manager.get_global_setting("fullscreen_pause", False)
+        if not enabled:
+            if self._fullscreen_paused:
+                self._fullscreen_paused = False
+                if not self.all_hidden:
+                    for active_char in self.active_characters.values():
+                        active_char.show()
+            return
+
+        exclude_hwnds = []
+        for active_char in self.active_characters.values():
+            if active_char.window:
+                try:
+                    exclude_hwnds.append(int(active_char.window.winId()))
+                except Exception:
+                    pass
+        if self.launcher:
+            try:
+                exclude_hwnds.append(int(self.launcher.winId()))
+            except Exception:
+                pass
+
+        is_fs = is_fullscreen_active(exclude_hwnds)
+        if is_fs and not self._fullscreen_paused:
+            self._fullscreen_paused = True
+            for active_char in self.active_characters.values():
+                active_char.hide()
+        elif not is_fs and self._fullscreen_paused:
+            self._fullscreen_paused = False
+            if not self.all_hidden:
+                for active_char in self.active_characters.values():
+                    active_char.show()
+
     def quit_app(self):
         """Exit the application / Esce dall'applicazione."""
+        if hasattr(self, 'fullscreen_timer') and self.fullscreen_timer.isActive():
+            self.fullscreen_timer.stop()
+
         # Clean up all active characters / Pulisci tutti i personaggi attivi
         for active_char in self.active_characters.values():
             active_char.cleanup()

@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QMouseEvent, QGuiApplication, QCursor
 import ctypes
 from ctypes import wintypes
 
@@ -90,7 +90,6 @@ class OverlayWindow(QWidget):
         """Imposta hook WinEvent per reagire ai cambiamenti di finestra in foreground."""
         # Callback che chiama force_topmost quando cambia finestra
         def foreground_callback(hWinEventHook, event, hwnd, idObject, idChild, idThread, dwmsEventTime):
-            print(f'Hook scattato, evento: {event}')
             try:
                 if event == EVENT_SYSTEM_FOREGROUND:
                     self.force_topmost()
@@ -151,25 +150,85 @@ class OverlayWindow(QWidget):
         user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style)
         self.is_click_through = enabled
 
+    def clamp_to_screen(self, pos: QPoint) -> QPoint:
+        """
+        Limita la posizione della finestra all'area visibile del monitor (screen.geometry).
+        Consente al personaggio di posizionarsi sopra la barra di Windows,
+        fermandosi a filo con il bordo inferiore del monitor senza essere tagliato.
+        """
+        # Se stiamo trascinando col mouse, usiamo lo schermo dove si trova il cursore
+        screen = None
+        if self.drag_position is not None:
+            screen = QGuiApplication.screenAt(QCursor.pos())
+
+        if not screen:
+            center_point = QPoint(pos.x() + self.width() // 2, pos.y() + self.height() // 2)
+            screen = QGuiApplication.screenAt(center_point)
+
+        if not screen:
+            screen = QApplication.primaryScreen()
+
+        if not screen:
+            return pos
+
+        geom = screen.geometry()
+        min_x = geom.x()
+        max_x = geom.x() + geom.width() - self.width()
+        min_y = geom.y()
+        max_y = geom.y() + geom.height() - self.height()
+
+        if max_x < min_x:
+            max_x = min_x
+        if max_y < min_y:
+            max_y = min_y
+
+        clamped_x = max(min_x, min(max_x, pos.x()))
+        clamped_y = max(min_y, min(max_y, pos.y()))
+        return QPoint(clamped_x, clamped_y)
+
+    def move(self, *args):
+        """Sposta la finestra garantendo che rimanga sempre all'interno del monitor (a filo sul fondo)."""
+        if len(args) == 1 and isinstance(args[0], QPoint):
+            clamped = self.clamp_to_screen(args[0])
+            super().move(clamped)
+        elif len(args) == 2:
+            clamped = self.clamp_to_screen(QPoint(int(args[0]), int(args[1])))
+            super().move(clamped)
+        else:
+            super().move(*args)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Assicura che la finestra appena mostrata non sia fuori schermo
+        clamped = self.clamp_to_screen(self.pos())
+        if self.pos() != clamped:
+            super().move(clamped)
+        self.force_topmost()
+
     def mousePressEvent(self, event: QMouseEvent):
         """Gestisce l'inizio del trascinamento."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.drag_started.emit()
+            self.force_topmost()
             event.accept()
-            
+
     def mouseMoveEvent(self, event: QMouseEvent):
-        """Gestisce il trascinamento della finestra."""
+        """Gestisce il trascinamento della finestra con clamping sul monitor (può andare sopra la barra)."""
         if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position:
             new_pos = event.globalPosition().toPoint() - self.drag_position
             self.move(new_pos)
-            self.position_changed.emit(new_pos.x(), new_pos.y())
+            current_pos = self.pos()
+            self.position_changed.emit(current_pos.x(), current_pos.y())
+            self.force_topmost()
             event.accept()
-            
+
     def mouseReleaseEvent(self, event: QMouseEvent):
-        """Termina il trascinamento."""
+        """Termina il trascinamento garantendo che sia a filo con i bordi e in primo piano rispetto alla barra."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_position = None
-            current_pos = self.pos()
-            self.drag_ended.emit(current_pos.x(), current_pos.y())
+            clamped_pos = self.clamp_to_screen(self.pos())
+            super().move(clamped_pos)
+            self.drag_ended.emit(clamped_pos.x(), clamped_pos.y())
+            self.force_topmost()
             event.accept()
