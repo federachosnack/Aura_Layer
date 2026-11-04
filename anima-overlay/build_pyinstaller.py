@@ -59,13 +59,14 @@ def main():
     time.sleep(3)
 
     # Rimuovi cartella temporanea se esiste
-    dist_temp = os.path.join(os.path.dirname(__file__), "dist_temp")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dist_temp = os.path.join(script_dir, "dist_temp")
     if os.path.exists(dist_temp):
         print("Rimozione cartella temporanea dist_temp...")
         try:
             shutil.rmtree(dist_temp)
         except PermissionError as e:
-            print(f"⚠ Impossibile rimuovere dist_temp: {e}")
+            print(f"Attenzione: Impossibile rimuovere dist_temp: {e}")
             print("Procedo comunque con la build...")
 
     # Retry logic per la build
@@ -73,7 +74,7 @@ def main():
     for attempt in range(max_retries):
         try:
             print(f"Tentativo di build {attempt + 1}/{max_retries}...")
-            result = subprocess.run(PYINSTALLER_CMD, check=True)
+            result = subprocess.run(PYINSTALLER_CMD, check=True, cwd=script_dir)
 
             # Build completato con successo
             print("\nBuild completato con successo!")
@@ -85,11 +86,11 @@ def main():
         except subprocess.CalledProcessError as e:
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) * 5
-                print(f"\n✗ Errore durante la build (tentativo {attempt + 1}): {e}")
+                print(f"\n[X] Errore durante la build (tentativo {attempt + 1}): {e}")
                 print(f"Attendo {wait_time} secondi prima di riprovare...")
                 time.sleep(wait_time)
             else:
-                print(f"\n✗ Errore durante la build dopo {max_retries} tentativi: {e}")
+                print(f"\n[X] Errore durante la build dopo {max_retries} tentativi: {e}")
                 print("Suggerimento: verifica con Resource Monitor quale processo tiene occupata la cartella dist\\AuraLayer")
                 sys.exit(1)
 
