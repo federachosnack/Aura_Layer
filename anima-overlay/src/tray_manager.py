@@ -1,7 +1,6 @@
-from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, pyqtSignal
-import sys
 import os
 
 
@@ -12,6 +11,7 @@ class TrayManager(QObject):
     quit_signal = pyqtSignal()
     open_launcher_signal = pyqtSignal()
     toggle_all_signal = pyqtSignal()  # Show/Hide All / Mostra/Nascondi tutti
+    unlock_all_signal = pyqtSignal()  # Unlock all characters / Sblocca tutti i personaggi
 
     def __init__(self, translations=None, parent=None):
         super().__init__(parent)
@@ -21,7 +21,7 @@ class TrayManager(QObject):
         
     def create_tray_icon(self, icon_path=None):
         """Create system tray icon / Crea l'icona nella system tray."""
-        self.tray_icon = QSystemTrayIcon()
+        self.tray_icon = QSystemTrayIcon(self)
 
         # If no custom icon, use default / Se non c'è icona personalizzata, usa quella di default
         if icon_path and os.path.exists(icon_path):
@@ -66,6 +66,12 @@ class TrayManager(QObject):
         toggle_all_action = QAction(toggle_all_text, self.menu)
         toggle_all_action.triggered.connect(self.toggle_all_signal.emit)
         self.menu.addAction(toggle_all_action)
+
+        # Menu item to unlock all / Voce per sbloccare tutti i personaggi
+        unlock_all_text = self.translations.get("tray_unlock_all", "Sblocca tutti i personaggi") if self.translations else "Sblocca tutti i personaggi"
+        unlock_all_action = QAction(unlock_all_text, self.menu)
+        unlock_all_action.triggered.connect(self.unlock_all_signal.emit)
+        self.menu.addAction(unlock_all_action)
 
         self.menu.addSeparator()
 

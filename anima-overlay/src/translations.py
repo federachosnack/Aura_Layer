@@ -16,12 +16,14 @@ class Translations:
             # Tray menu
             "tray_open_launcher": "Apri Launcher",
             "tray_toggle_all": "Mostra/Nascondi Tutti",
+            "tray_unlock_all": "Sblocca tutti i personaggi",
             "tray_quit": "Esci",
             
             # Launcher window
             "launcher_title": "Aura Layer - Launcher",
             "launcher_characters": "Personaggi",
             "launcher_settings": "Impostazioni",
+            "page_settings_title": "Impostazioni",
             "launcher_add_character": "Aggiungi Personaggio",
             "launcher_no_characters": "Nessun personaggio disponibile",
             "launcher_create_first": "Crea il tuo primo personaggio",
@@ -39,8 +41,19 @@ class Translations:
             # Behaviors
             "behavior_static": "Statico",
             "behavior_free_walk": "Cammino Libero",
-            "behavior_random_edge": "Bordo Casuale",
+            "behavior_random_edge": "Sbircia dai bordi",
             "behavior_gravity": "Gravità",
+            "behavior_desc_static": "Resta fermo nella posizione del desktop in cui lo trascini.",
+            "behavior_desc_free_walk": "Passeggia autonomamente avanti e indietro sopra la barra delle applicazioni.",
+            "behavior_desc_gravity": "Cade con la fisica verso il fondo dello schermo e compie piccoli rimbalzi elastici.",
+            "behavior_desc_random_edge": "Resta nascosto e si affaccia a sorpresa dai bordi dello schermo per farti un saluto.",
+
+            # Audio options & buttons
+            "audio_play_on_startup": "Riproduci audio all'avvio",
+            "btn_audio_preview": "Ascolta",
+            "btn_audio_stop": "Ferma",
+            "btn_audio_remove": "Rimuovi audio",
+            "msg_all_unlocked": "Tutti i personaggi sono stati sbloccati.",
             
             # Buttons
             "btn_launch": "Avvia",
@@ -79,6 +92,10 @@ class Translations:
             "launcher_settings_title": "Impostazioni dell'applicazione",
             "launcher_settings_desc": "Questa sezione è pronta per ospitare preferenze globali, avvio automatico e opzioni grafiche.",
             "launcher_coming_soon": "IN ARRIVO",
+            "settings_packages_title": "Pacchetti e Libreria Personaggi",
+            "settings_packages_desc": "Importa nuovi compagni desktop da pacchetti .aura o gestisci i file locali.",
+            "import_aura_title": "Importa Compagno .aura",
+            "import_aura_sub": "Aggiunge un personaggio preconfigurato con animazione, audio e parametri.",
             "launcher_startup_system": "Avvio e sistema",
             "launcher_appearance": "Aspetto",
             "launcher_behavior": "Comportamento overlay",
@@ -138,6 +155,7 @@ class Translations:
             "details_eyebrow": "DETTAGLI",
             "details_not_selected": "NON SELEZIONATO",
             "details_behavior": "COMPORTAMENTO",
+            "details_screen": "SCHERMO",
             "details_fps": "FPS",
             "details_size": "DIMENSIONE",
             "details_audio": "AUDIO",
@@ -155,7 +173,7 @@ class Translations:
 
             # Info
             "info_title": "Informazioni",
-            "info_version": "Versione: 1.0.1",
+            "info_version": "Versione: 1.1.0",
             "info_project": "Aura Layer - Desktop Overlay",
             "info_credits": "Progettato per migliorare la tua esperienza desktop",
 
@@ -181,7 +199,7 @@ class Translations:
 
             # Behaviors
             "behavior_static": "Statico",
-            "behavior_random_edge": "Bordi casuali",
+            "behavior_random_edge": "Sbircia dai bordi",
             "behavior_free_walk": "Movimento libero",
             "behavior_gravity": "Gravità",
 
@@ -222,7 +240,7 @@ class Translations:
             "dialog_autostart_failed": "Impossibile configurare l'avvio automatico",
             "dialog_new_name": "Nuovo nome:",
             "dialog_invalid_folder_chars": "Il nome non può contenere separatori di cartella.",
-            "dialog_remove_confirm": "Vuoi rimuovere definitivamente",
+            "dialog_remove_confirm": "Vuoi rimuovere definitivamente \"{name}\" dalla libreria?",
             "dialog_import_error": "Non è stato possibile aggiungere il personaggio.",
             "dialog_remove_error": "Non è stato possibile rimuovere il personaggio.",
             "dialog_rename_error": "Non è stato possibile rinominare il personaggio.",
@@ -236,6 +254,82 @@ class Translations:
             # Status badges
             "status_active_desktop": "Attivo sul desktop",
             "status_ready": "Pronto",
+
+            # Export/Import .aura
+            "btn_export_aura": "Esporta .aura",
+            "btn_import_aura": "Importa .aura",
+            "export_title": "Esporta Personaggio",
+            "export_content": "CONTENUTO",
+            "export_animation": "Animazione",
+            "export_audio": "Audio",
+            "export_thumbnail": "Anteprima (auto)",
+            "export_config": "CONFIGURAZIONE",
+            "export_behavior": "Comportamento",
+            "export_fps": "Frame Rate",
+            "export_scale": "Dimensione",
+            "export_volume": "Volume",
+            "export_lock": "Stato blocco",
+            "export_notes": "NOTE PERSONALIZZATE",
+            "export_notes_hint": "Opzionale, visibile a chi importa",
+            "export_size_estimate": "Dimensione stimata",
+            "export_success": "Personaggio esportato con successo!",
+            "export_failed": "Esportazione non riuscita",
+            "import_title": "Importa Personaggio",
+            "import_content_included": "CONTENUTO INCLUSO",
+            "import_config_included": "CONFIGURAZIONE INCLUSA",
+            "import_apply": "Applicare",
+            "import_name": "NOME",
+            "import_name_hint": "Puoi cambiare il nome prima di importare",
+            "import_author_note": "Nota dell'autore",
+            "import_created": "Creato il",
+            "import_made_with": "Creato con Aura Layer",
+            "import_success": "Personaggio importato con successo!",
+            "import_failed": "Importazione .aura non riuscita",
+            "import_invalid": "File .aura non valido",
+            "import_invalid_desc": "Il file selezionato non è un pacchetto .aura valido.",
+            "import_conflict_title": "Nome già esistente",
+            "import_conflict_msg": "Esiste già un personaggio con il nome \"{name}\".\n\nVuoi sovrascrivere il personaggio esistente o rinominare?",
+            "import_overwrite": "Sovrascrivi",
+            "import_rename": "Rinomina in \"{name}\"",
+            "import_select_file": "Seleziona file .aura",
+            "import_deselect_hint": "Deseleziona per usare i valori predefiniti",
+            "aura_filter": "Pacchetto Aura (*.aura)",
+
+            # Multi-Monitor
+            "screen_auto": "Automatico (Ricorda posizione)",
+            "screen_primary": "Principale",
+            "screen_secondary": "Secondario",
+            "msg_screen_disconnected": "Uno schermo è stato scollegato. I personaggi sono stati riposizionati sul monitor principale.",
+
+            # Context menu
+            "ctx_play_audio": "Riproduci audio",
+            "ctx_behavior": "Comportamento",
+            "ctx_move_to_screen": "Sposta su Schermo",
+            "ctx_lock": "Blocca sul desktop",
+            "ctx_open_launcher": "Modifica nel Launcher",
+            "ctx_remove_desktop": "Rimuovi dal desktop",
+            "ctx_locked_notification_title": "Personaggio Bloccato",
+            "ctx_locked_notification_msg": "\"{name}\" è ora trasparente ai clic.\nPuoi sbloccarlo dal Launcher.",
+
+            # Extra UI labels & stats
+            "details_ai_tools": "STRUMENTI GRAFICA & AI",
+            "badge_active": "ATTIVO",
+            "badge_ready": "PRONTO",
+            "stats_active_single": "1 personaggio attivo",
+            "stats_active_multi": "{active} personaggi attivi",
+            "sidebar_active_single": "1 compagno attivo",
+            "sidebar_active_multi": "{active} compagni attivi",
+            "topbar_active_single": "1 attivo",
+            "topbar_active_multi": "{active} attivi",
+            "library_count_single": "1 elemento",
+            "library_count_multi": "{total} elementi",
+            "btn_processing": "Elaborazione in corso...",
+            "screen_num": "Schermo {i}",
+            "filter_animation_files": "File animazione (*.gif *.png *.webp *.apng)",
+            "export_no_audio": "Nessun file audio associato",
+            "export_thumb_auto": "Generata automaticamente (150x150)",
+            "status_locked": "Bloccato",
+            "status_unlocked": "Sbloccato",
         },
         "en": {
             # Main application
@@ -245,12 +339,14 @@ class Translations:
             # Tray menu
             "tray_open_launcher": "Open Launcher",
             "tray_toggle_all": "Show/Hide All",
+            "tray_unlock_all": "Unlock all characters",
             "tray_quit": "Quit",
             
             # Launcher window
             "launcher_title": "Aura Layer - Launcher",
             "launcher_characters": "Characters",
             "launcher_settings": "Settings",
+            "page_settings_title": "Settings",
             "launcher_add_character": "Add Character",
             "launcher_no_characters": "No characters available",
             "launcher_create_first": "Create your first character",
@@ -268,8 +364,19 @@ class Translations:
             # Behaviors
             "behavior_static": "Static",
             "behavior_free_walk": "Free Walk",
-            "behavior_random_edge": "Random Edge",
+            "behavior_random_edge": "Peek from edges",
             "behavior_gravity": "Gravity",
+            "behavior_desc_static": "Stays in the exact desktop position where you drag it.",
+            "behavior_desc_free_walk": "Walks back and forth autonomously above the taskbar.",
+            "behavior_desc_gravity": "Falls with physics to the bottom of the screen and gently bounces.",
+            "behavior_desc_random_edge": "Stays hidden and peeks out from the screen edges as a surprise greeting.",
+
+            # Audio options & buttons
+            "audio_play_on_startup": "Play audio on startup",
+            "btn_audio_preview": "Play",
+            "btn_audio_stop": "Stop",
+            "btn_audio_remove": "Remove audio",
+            "msg_all_unlocked": "All characters have been unlocked.",
             
             # Buttons
             "btn_launch": "Launch",
@@ -308,6 +415,10 @@ class Translations:
             "launcher_settings_title": "Application Settings",
             "launcher_settings_desc": "This section is ready to host global preferences, autostart, and graphics options.",
             "launcher_coming_soon": "COMING SOON",
+            "settings_packages_title": "Packages & Character Library",
+            "settings_packages_desc": "Import new desktop companions from .aura packages or manage local files.",
+            "import_aura_title": "Import .aura Companion",
+            "import_aura_sub": "Adds a preconfigured character with animation, audio, and settings.",
             "launcher_startup_system": "Startup & System",
             "launcher_appearance": "Appearance",
             "launcher_behavior": "Overlay Behavior",
@@ -367,6 +478,7 @@ class Translations:
             "details_eyebrow": "DETAILS",
             "details_not_selected": "NOT SELECTED",
             "details_behavior": "BEHAVIOR",
+            "details_screen": "SCREEN",
             "details_fps": "FPS",
             "details_size": "SIZE",
             "details_audio": "AUDIO",
@@ -384,7 +496,7 @@ class Translations:
 
             # Info
             "info_title": "Information",
-            "info_version": "Version: 1.0.1",
+            "info_version": "Version: 1.1.0",
             "info_project": "Aura Layer - Desktop Overlay",
             "info_credits": "Designed to enhance your desktop experience",
 
@@ -410,7 +522,7 @@ class Translations:
 
             # Behaviors
             "behavior_static": "Static",
-            "behavior_random_edge": "Random edges",
+            "behavior_random_edge": "Peek from edges",
             "behavior_free_walk": "Free movement",
             "behavior_gravity": "Gravity",
 
@@ -451,7 +563,7 @@ class Translations:
             "dialog_autostart_failed": "Unable to configure autostart",
             "dialog_new_name": "New name:",
             "dialog_invalid_folder_chars": "The name cannot contain folder separators.",
-            "dialog_remove_confirm": "Do you want to permanently remove",
+            "dialog_remove_confirm": "Do you want to permanently remove \"{name}\" from the library?",
             "dialog_import_error": "Unable to add character.",
             "dialog_remove_error": "Unable to remove character.",
             "dialog_rename_error": "Unable to rename character.",
@@ -465,6 +577,82 @@ class Translations:
             # Status badges
             "status_active_desktop": "Active on desktop",
             "status_ready": "Ready",
+
+            # Export/Import .aura
+            "btn_export_aura": "Export .aura",
+            "btn_import_aura": "Import .aura",
+            "export_title": "Export Character",
+            "export_content": "CONTENT",
+            "export_animation": "Animation",
+            "export_audio": "Audio",
+            "export_thumbnail": "Thumbnail (auto)",
+            "export_config": "CONFIGURATION",
+            "export_behavior": "Behavior",
+            "export_fps": "Frame Rate",
+            "export_scale": "Scale",
+            "export_volume": "Volume",
+            "export_lock": "Lock state",
+            "export_notes": "PERSONAL NOTES",
+            "export_notes_hint": "Optional, visible to the importer",
+            "export_size_estimate": "Estimated size",
+            "export_success": "Character exported successfully!",
+            "export_failed": "Export failed",
+            "import_title": "Import Character",
+            "import_content_included": "CONTENT INCLUDED",
+            "import_config_included": "CONFIGURATION INCLUDED",
+            "import_apply": "Apply",
+            "import_name": "NAME",
+            "import_name_hint": "You can change the name before importing",
+            "import_author_note": "Author note",
+            "import_created": "Created on",
+            "import_made_with": "Made with Aura Layer",
+            "import_success": "Character imported successfully!",
+            "import_failed": "Import .aura failed",
+            "import_invalid": "Invalid .aura file",
+            "import_invalid_desc": "The selected file is not a valid .aura package.",
+            "import_conflict_title": "Name already exists",
+            "import_conflict_msg": "A character named \"{name}\" already exists.\n\nDo you want to overwrite the existing character or rename?",
+            "import_overwrite": "Overwrite",
+            "import_rename": "Rename to \"{name}\"",
+            "import_select_file": "Select .aura file",
+            "import_deselect_hint": "Deselect to use default values",
+            "aura_filter": "Aura Package (*.aura)",
+
+            # Multi-Monitor
+            "screen_auto": "Automatic (Remember position)",
+            "screen_primary": "Primary",
+            "screen_secondary": "Secondary",
+            "msg_screen_disconnected": "A screen was disconnected. Characters have been repositioned to the primary monitor.",
+
+            # Context menu
+            "ctx_play_audio": "Play audio",
+            "ctx_behavior": "Behavior",
+            "ctx_move_to_screen": "Move to Screen",
+            "ctx_lock": "Lock on desktop",
+            "ctx_open_launcher": "Edit in Launcher",
+            "ctx_remove_desktop": "Remove from desktop",
+            "ctx_locked_notification_title": "Character Locked",
+            "ctx_locked_notification_msg": "\"{name}\" is now click-through.\nYou can unlock from Launcher.",
+
+            # Extra UI labels & stats
+            "details_ai_tools": "GRAPHICS & AI TOOLS",
+            "badge_active": "ACTIVE",
+            "badge_ready": "READY",
+            "stats_active_single": "1 active character",
+            "stats_active_multi": "{active} active characters",
+            "sidebar_active_single": "1 active companion",
+            "sidebar_active_multi": "{active} active companions",
+            "topbar_active_single": "1 active",
+            "topbar_active_multi": "{active} active",
+            "library_count_single": "1 item",
+            "library_count_multi": "{total} items",
+            "btn_processing": "Processing...",
+            "screen_num": "Screen {i}",
+            "filter_animation_files": "Animation files (*.gif *.png *.webp *.apng)",
+            "export_no_audio": "No associated audio file",
+            "export_thumb_auto": "Automatically generated (150x150)",
+            "status_locked": "Locked",
+            "status_unlocked": "Unlocked",
         }
     }
     
@@ -501,6 +689,7 @@ def init_translations(language: str = "it") -> Translations:
 
 def get_translations() -> Translations:
     """Get global translation instance."""
+    global _translation_instance
     if _translation_instance is None:
         _translation_instance = Translations("it")
     return _translation_instance

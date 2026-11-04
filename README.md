@@ -1,6 +1,7 @@
 # Aura Layer
 
 ![License](https://img.shields.io/badge/license-Aura%20Layer-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.13-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
@@ -8,7 +9,7 @@ Aura Layer is a desktop character overlay application for Windows that lets you 
 
 Characters can remain static, move freely around the screen, interact with screen edges, or react to gravity. You can also add custom characters, animations, audio, and configure appearance and performance settings.
 
-**Status**: Stable Windows release available. Aura Layer is actively maintained and will continue to receive updates, improvements, and new features.
+**Status**: Stable Windows v1.1.0 release available. Aura Layer is actively maintained and will continue to receive updates, improvements, and new features.
 
 ## Download
 
@@ -19,14 +20,22 @@ Each release includes the corresponding executable and release notes. Previous r
 ## Features
 
 - **Desktop Character Overlay**: Display animated characters directly on your Windows desktop
-- **Multiple Behaviors**: Choose from static, free walk, random edge, or gravity behaviors
-- **Custom Characters**: Add your own characters with custom animations and audio
-- **AI Background Removal**: Remove backgrounds from character images using AI (rembg)
-- **Multi-language Support**: Available in Italian and English
-- **System Tray Integration**: Minimize to system tray with quick access
+- **Cyber Glass Fluent UI**: Modern translucent launcher with glassmorphic styling, neon accents, and smooth transitions
+- **Toss & Fling Ballistic Physics**: Fling characters across screens with realistic inertia, damping bounces, and zero-CPU sleep on rest
+- **Multi-Monitor Dynamic Engine**: Seamless multi-monitor support with real-time drag synchronization, coordinate scaling, and disconnect recovery
+- **Desktop Context Menu**: Right-click active characters directly on your desktop to lock/unlock, switch behavior, test audio, or move between monitors
+- **Safe Overflow Mode**: Free positioning of static characters docked along screen edges and overlapping the Windows taskbar
+- **Character Package System (.aura)**: One-click export and import of portable character bundles containing animations, audio, and metadata
+- **Global System Hotkey (Ctrl+Alt+H)**: Native Windows shortcut to instantly hide or show all desktop companions, even during full-screen games
+- **Audio Customization**: Custom sound/voice per character with individual volume control, startup toggle, and one-click removal
+- **Multiple Behaviors**: Choose from static, free walk, smooth peek-a-boo random edge, or interactive gravity
+- **AI Background Removal**: Remove backgrounds from character images using AI (rembg) with lazy loading for instant startup
+- **Multi-language Support**: Complete, symmetrical Italian and English localization
+- **System Tray Integration**: Minimize to system tray with quick access and emergency unlock controls
 - **Configurable Settings**: Customize startup behavior, appearance, and performance
-- **FPS Control**: Set individual and global FPS limits for performance optimization
+- **FPS Control**: Set individual and global FPS limits with precise numeric keyboard input
 - **Click-through Mode**: Allow mouse clicks to pass through characters to the windows underneath
+- **Crash-Proof & Atomic Architecture**: Atomic configuration writes, corrupted file recovery, and strict 64-bit ctypes safety
 
 ## Installation
 
@@ -84,10 +93,10 @@ The executable will be created in the `dist_temp/` directory.
 
 ## Character Behaviors
 
-- **Static**: Character stays in one position (can be dragged)
-- **Free Walk**: Character moves freely around the screen
-- **Random Edge**: Character appears at random screen edges
-- **Gravity**: Character falls with gravity physics
+- **Static**: Character stays in place with Safe Overflow support (can overlap borders and taskbar)
+- **Free Walk**: Character moves freely across screens with boundary detection
+- **Random Edge (Peek-a-boo)**: Smooth cubic easing edge peek, pause, and retreat behavior
+- **Gravity (Toss & Fling)**: Natural gravity and drag-throw physics with soft bounce damping and instant zero-CPU sleep on rest
 
 ## Settings
 
@@ -174,10 +183,10 @@ See the [LICENSE](LICENSE) file for the complete terms.
 
 ## Roadmap
 
-- [ ] Linux support
-- [ ] Further multi-monitor improvements
-- [ ] Additional interaction features
-- [ ] Performance and stability improvements
+- [ ] Linux support (Steam Deck / Wayland / X11)
+- [x] Further multi-monitor improvements
+- [x] Additional interaction features
+- [x] Performance and stability improvements
 
 ## Support
 

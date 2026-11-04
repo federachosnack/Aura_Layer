@@ -45,6 +45,8 @@ Desktop.ini
 
 # Project-specific user data
 characters/
+config.json
+*.corrupted
 *.bak
 *_backup.*
 

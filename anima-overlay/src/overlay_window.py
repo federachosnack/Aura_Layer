@@ -6,9 +6,11 @@ from ctypes import wintypes
 
 # Costanti Win32 per SetWindowPos
 HWND_TOPMOST = -1
-SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
+SWP_FRAMECHANGED = 0x0020
 
 # Costanti Win32 per SetWinEventHook
 EVENT_SYSTEM_FOREGROUND = 3
@@ -31,6 +33,24 @@ WinEventProc = ctypes.CFUNCTYPE(
     wintypes.DWORD   # dwmsEventTime
 )
 
+# Inizializzazione 64-bit sicura a livello di modulo per user32
+_user32 = ctypes.windll.user32
+
+_user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+_user32.SetWindowPos.restype = wintypes.BOOL
+
+_user32.SetWinEventHook.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.HMODULE, WinEventProc, wintypes.DWORD, wintypes.DWORD, wintypes.UINT]
+_user32.SetWinEventHook.restype = wintypes.HANDLE
+
+_user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
+_user32.UnhookWinEvent.restype = wintypes.BOOL
+
+_user32.GetWindowLongPtrW.restype = ctypes.c_longlong
+_user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+
+_user32.SetWindowLongPtrW.restype = ctypes.c_longlong
+_user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_longlong]
+
 
 class OverlayWindow(QWidget):
     """Finestra overlay trasparente, senza bordi, always-on-top."""
@@ -39,21 +59,23 @@ class OverlayWindow(QWidget):
     drag_started = pyqtSignal()
     drag_ended = pyqtSignal(int, int)  # x, y posizione finale
     position_changed = pyqtSignal(int, int)  # x, y durante drag
+    right_clicked = pyqtSignal(QPoint)  # posizione globale per menu contestuale desktop
     
     def __init__(self):
         super().__init__()
         self.setup_window()
         self.drag_position = None
         self.is_click_through = False
+        self.allow_offscreen = False
+        self.safe_overflow = False
 
         # Riferimento al callback per evitare garbage collection
         self._win_event_callback = None
         self._event_hook = None
 
-        # Timer ridotto a 300ms come fallback
-        self.topmost_timer = QTimer()
+        # Timer fallback per riasserire topmost a intervalli regolari (attivo solo quando visibile)
+        self.topmost_timer = QTimer(self)
         self.topmost_timer.timeout.connect(self.force_topmost)
-        self.topmost_timer.start(300)
 
         # Imposta hook per reagire immediatamente ai cambiamenti di focus
         self.setup_foreground_hook()
@@ -71,13 +93,7 @@ class OverlayWindow(QWidget):
     def force_topmost(self):
         """Riasserisce lo stato topmost usando API Win32 per z-order affidabile."""
         hwnd = int(self.winId())
-
-        # Imposta argtypes per corretto marshalling su 64-bit
-        user32 = ctypes.windll.user32
-        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
-        user32.SetWindowPos.restype = wintypes.BOOL
-
-        result = user32.SetWindowPos(
+        result = _user32.SetWindowPos(
             hwnd, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         )
@@ -88,27 +104,20 @@ class OverlayWindow(QWidget):
 
     def setup_foreground_hook(self):
         """Imposta hook WinEvent per reagire ai cambiamenti di finestra in foreground."""
-        # Callback che chiama force_topmost quando cambia finestra
         def foreground_callback(hWinEventHook, event, hwnd, idObject, idChild, idThread, dwmsEventTime):
             try:
-                if event == EVENT_SYSTEM_FOREGROUND:
+                if event == EVENT_SYSTEM_FOREGROUND and self.isVisible():
                     self.force_topmost()
             except Exception as e:
-                # Callback nativo: logga errore ma non propagare eccezione
                 print(f"Error in foreground_callback: {e}")
 
         # Crea e mantiene riferimento al callback
         self._win_event_callback = WinEventProc(foreground_callback)
 
-        # Imposta hook con argtypes corretti
-        user32 = ctypes.windll.user32
-        user32.SetWinEventHook.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.HMODULE, WinEventProc, wintypes.DWORD, wintypes.DWORD, wintypes.UINT]
-        user32.SetWinEventHook.restype = wintypes.HANDLE
-
-        self._event_hook = user32.SetWinEventHook(
+        self._event_hook = _user32.SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND,
             EVENT_SYSTEM_FOREGROUND,
-            0,
+            None,
             self._win_event_callback,
             0,
             0,
@@ -121,33 +130,36 @@ class OverlayWindow(QWidget):
     def cleanup_hook(self):
         """Pulisce l'hook quando la finestra viene distrutta."""
         if self._event_hook:
-            user32 = ctypes.windll.user32
-            user32.UnhookWinEvent.argtypes = [wintypes.HANDLE]
-            user32.UnhookWinEvent.restype = wintypes.BOOL
-            user32.UnhookWinEvent(self._event_hook)
+            _user32.UnhookWinEvent(self._event_hook)
             self._event_hook = None
         self._win_event_callback = None
 
     def closeEvent(self, event):
-        """Pulisce risorse alla chiusura."""
+        """Pulisce risorse e ferma il timer alla chiusura."""
         self.cleanup_hook()
+        if self.topmost_timer.isActive():
+            self.topmost_timer.stop()
         super().closeEvent(event)
 
-    def set_click_through(self, enabled: bool):
-        """Attiva/disattiva la modalità click-through (mouse trasparente)."""
-        hwnd = int(self.winId())
-        user32 = ctypes.windll.user32
-        user32.GetWindowLongPtrW.restype = ctypes.c_longlong
-        user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
-        user32.SetWindowLongPtrW.restype = ctypes.c_longlong
-        user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_longlong]
+    def hideEvent(self, event):
+        """Ferma il timer topmost quando la finestra viene nascosta per azzerare cicli CPU."""
+        super().hideEvent(event)
+        if self.topmost_timer.isActive():
+            self.topmost_timer.stop()
 
-        current_style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+    def set_click_through(self, enabled: bool):
+        """Attiva/disattiva la modalità click-through (mouse trasparente) aggiornando subito la cache Win32."""
+        hwnd = int(self.winId())
+        current_style = _user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
         if enabled:
             new_style = current_style | WS_EX_TRANSPARENT | WS_EX_LAYERED
         else:
             new_style = current_style & ~WS_EX_TRANSPARENT
-        user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style)
+        _user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style)
+        _user32.SetWindowPos(
+            hwnd, 0, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE
+        )
         self.is_click_through = enabled
 
     def clamp_to_screen(self, pos: QPoint) -> QPoint:
@@ -172,10 +184,19 @@ class OverlayWindow(QWidget):
             return pos
 
         geom = screen.geometry()
-        min_x = geom.x()
-        max_x = geom.x() + geom.width() - self.width()
-        min_y = geom.y()
-        max_y = geom.y() + geom.height() - self.height()
+        if getattr(self, "safe_overflow", False):
+            # Safe overflow per personaggi statici: consente di sbordare oltre lo schermo
+            # per compensare margini vuoti, garantendo una presa di sicurezza minima visibile
+            min_grip = min(60, max(20, self.width() // 3), max(20, self.height() // 3))
+            min_x = geom.x() - (self.width() - min_grip)
+            max_x = geom.x() + geom.width() - min_grip
+            min_y = geom.y() - (self.height() - min_grip)
+            max_y = geom.y() + geom.height() - min_grip
+        else:
+            min_x = geom.x()
+            max_x = geom.x() + geom.width() - self.width()
+            min_y = geom.y()
+            max_y = geom.y() + geom.height() - self.height()
 
         if max_x < min_x:
             max_x = min_x
@@ -188,6 +209,15 @@ class OverlayWindow(QWidget):
 
     def move(self, *args):
         """Sposta la finestra garantendo che rimanga sempre all'interno del monitor (a filo sul fondo)."""
+        if getattr(self, "allow_offscreen", False):
+            if len(args) == 1 and isinstance(args[0], QPoint):
+                super().move(args[0])
+            elif len(args) == 2:
+                super().move(int(args[0]), int(args[1]))
+            else:
+                super().move(*args)
+            return
+
         if len(args) == 1 and isinstance(args[0], QPoint):
             clamped = self.clamp_to_screen(args[0])
             super().move(clamped)
@@ -199,19 +229,29 @@ class OverlayWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Assicura che la finestra appena mostrata non sia fuori schermo
-        clamped = self.clamp_to_screen(self.pos())
-        if self.pos() != clamped:
-            super().move(clamped)
+        # Assicura che la finestra appena mostrata non sia fuori schermo se allow_offscreen è False
+        if not getattr(self, "allow_offscreen", False):
+            clamped = self.clamp_to_screen(self.pos())
+            if self.pos() != clamped:
+                super().move(clamped)
+        if not self.topmost_timer.isActive():
+            self.topmost_timer.start(500)
         self.force_topmost()
 
     def mousePressEvent(self, event: QMouseEvent):
-        """Gestisce l'inizio del trascinamento."""
+        """Gestisce l'inizio del trascinamento o il clic destro."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.drag_started.emit()
             self.force_topmost()
             event.accept()
+        elif event.button() == Qt.MouseButton.RightButton:
+            event.accept()
+
+    def contextMenuEvent(self, event):
+        """Gestisce l'evento menu contestuale."""
+        self.right_clicked.emit(event.globalPos())
+        event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """Gestisce il trascinamento della finestra con clamping sul monitor (può andare sopra la barra)."""
@@ -220,7 +260,6 @@ class OverlayWindow(QWidget):
             self.move(new_pos)
             current_pos = self.pos()
             self.position_changed.emit(current_pos.x(), current_pos.y())
-            self.force_topmost()
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent):

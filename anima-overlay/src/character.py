@@ -1,9 +1,7 @@
 import json
 import os
 from typing import Dict, Any, Optional
-from src.behaviors import RandomEdgeBehavior, FreeWalkBehavior, GravityBehavior
-from src.audio_manager import AudioManager
-from src.utils import get_app_data_dir
+from src.utils import get_app_data_dir, atomic_write_json
 
 
 class Character:
@@ -24,12 +22,21 @@ class Character:
         self.fps = None
         self.scale = None
         self.locked = False
+        self.preferred_screen = "auto"
+        self.play_audio_on_startup = True
 
         self.load_config()
         
     def load_config(self):
-        """Carica la configurazione dal file JSON del personaggio."""
+        """Carica la configurazione dal file JSON del personaggio con gestione recupero da .tmp."""
         config_path = os.path.join(self.character_path, "config.json")
+        tmp_path = f"{config_path}.tmp"
+
+        if not os.path.exists(config_path) and os.path.exists(tmp_path):
+            try:
+                os.replace(tmp_path, config_path)
+            except OSError:
+                config_path = tmp_path
 
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -50,6 +57,8 @@ class Character:
         self.fps = self.config.get("fps", None)  # FPS personalizzato o None per nativo
         self.scale = self.config.get("scale", None)  # Scaling in percentuale (25-200)
         self.locked = self.config.get("locked", False)  # Click-through mode
+        self.preferred_screen = self.config.get("preferred_screen", "auto")
+        self.play_audio_on_startup = self.config.get("play_audio_on_startup", True)
         
     def get_animation_path(self) -> str:
         """Restituisce il percorso completo del file animazione."""
@@ -70,17 +79,16 @@ class Character:
                 setattr(self, key, value)
 
     def save_config(self):
-        """Salva la configurazione corrente nel file JSON."""
+        """Salva la configurazione corrente nel file JSON in modo atomico."""
         config_path = os.path.join(self.character_path, "config.json")
-        with open(config_path, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, indent=2)
+        atomic_write_json(config_path, self.config)
         
     def has_audio(self) -> bool:
         """Verifica se il personaggio ha un file audio."""
         return self.audio_file is not None and os.path.exists(self.get_audio_path())
 
     def to_dict(self) -> Dict[str, Any]:
-        """Converte il personaggio in dizionario per serializzazione."""
+        """Converte il personaggio in dizionario completo per serializzazione."""
         return {
             "path": self.character_path,
             "name": self.name,
@@ -91,7 +99,12 @@ class Character:
             "height": self.height,
             "draggable": self.draggable,
             "speed": self.speed,
-            "volume": self.volume
+            "volume": self.volume,
+            "fps": self.fps,
+            "scale": self.scale,
+            "locked": self.locked,
+            "preferred_screen": self.preferred_screen,
+            "play_audio_on_startup": self.play_audio_on_startup
         }
 
 

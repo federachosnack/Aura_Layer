@@ -1,7 +1,8 @@
 import json
 import os
+import shutil
 from typing import Dict, Any, List, Optional
-from src.utils import get_app_data_dir
+from src.utils import get_app_data_dir, atomic_write_json
 
 
 class ConfigManager:
@@ -18,15 +19,36 @@ class ConfigManager:
         self.load_config()
 
     def load_config(self):
-        """Load configuration from file / Carica la configurazione dal file."""
+        """Load configuration from file / Carica la configurazione dal file con gestione recupero e backup."""
+        tmp_file = f"{self.config_file}.tmp"
+        loaded = False
+
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     self.config = json.load(f)
+                loaded = True
             except Exception as e:
-                print(f"Error loading config: {e}")
-                self.config = self.get_default_config()
-        else:
+                print(f"Error loading config from {self.config_file}: {e}")
+                # Backup corrupted file for safety / Salva backup del file corrotto per sicurezza
+                try:
+                    shutil.copy2(self.config_file, f"{self.config_file}.corrupted")
+                    print(f"Corrupted config backed up to {self.config_file}.corrupted")
+                except Exception:
+                    pass
+
+        # Se non caricato e c'è un file .tmp valido, prova a recuperare da .tmp
+        if not loaded and os.path.exists(tmp_file):
+            try:
+                with open(tmp_file, 'r', encoding='utf-8') as f:
+                    self.config = json.load(f)
+                loaded = True
+                print(f"Config successfully recovered from {tmp_file}")
+                self.save_config()
+            except Exception:
+                pass
+
+        if not loaded:
             self.config = self.get_default_config()
             self.save_config()
 
@@ -43,12 +65,8 @@ class ConfigManager:
         }
 
     def save_config(self):
-        """Save configuration to file / Salva la configurazione nel file."""
-        try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2)
-        except Exception as e:
-            print(f"Error saving config: {e}")
+        """Save configuration atomically to file / Salva la configurazione nel file in modo atomico."""
+        atomic_write_json(self.config_file, self.config)
 
     def get_active_characters(self) -> List[str]:
         """Return list of active characters / Restituisce la lista dei personaggi attivi."""

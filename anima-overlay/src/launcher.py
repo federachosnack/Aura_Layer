@@ -1,14 +1,17 @@
-from __future__ import annotations
-
+from datetime import datetime
 import json
 import os
 import shutil
+import subprocess
+import tempfile
 from typing import Optional
-from .utils import resource_path
+import zipfile
+from .utils import resource_path, atomic_write_json, get_app_data_dir
 
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QThread, QPointF
 from PyQt6.QtGui import (
     QColor,
+    QGuiApplication,
     QIcon,
     QLinearGradient,
     QPainter,
@@ -23,6 +26,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -36,13 +40,15 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
-    QSizePolicy,
     QSpinBox,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+APP_VERSION = "1.1.0"
+
 
 class NoScrollComboBox(QComboBox):
     """QComboBox che ignora la rotellina se non ha il focus."""
@@ -61,8 +67,8 @@ class NoScrollSpinBox(QSpinBox):
         else:
             event.ignore()
 
-from src.character import CharacterManager
-from src.config_manager import ConfigManager
+from src.character import Character, CharacterManager
+from src.audio_manager import AudioManager
 
 class StyleManager:
     """Palette e foglio di stile centralizzati con estetica futuristica Cyber Glass per Aura Layer."""
@@ -178,6 +184,7 @@ class StyleManager:
         c = cls.COLORS
         arrow_down = resource_path("loghi/arrow_down.png").replace("\\", "/")
         arrow_up = resource_path("loghi/arrow_up.png").replace("\\", "/")
+        checkmark = resource_path("loghi/checkmark.png").replace("\\", "/")
         return f"""
 QMainWindow {{
 background: {c['background']};
@@ -578,10 +585,20 @@ background: rgba(11, 16, 29, 0.8);
 QCheckBox#settingsCheckbox::indicator:checked {{
 background: {c['accent']};
 border-color: {c['accent']};
+image: url("{checkmark}");
 }}
 
 QCheckBox#settingsCheckbox::indicator:hover {{
 border-color: {c['accent']};
+}}
+
+QCheckBox#settingsCheckbox:disabled {{
+color: {c['text_dim']};
+}}
+
+QCheckBox#settingsCheckbox::indicator:disabled {{
+border-color: rgba(255, 255, 255, 0.08);
+background: rgba(255, 255, 255, 0.03);
 }}
 
 QLabel#hotkeyDisplay {{
@@ -810,6 +827,75 @@ def make_icon(name: str, color: str = "#DCE4F0", size: int = 20) -> QIcon:
         path.lineTo(s * 0.78, s * 0.70)
         painter.drawPath(path)
 
+    elif name == "folder":
+        painter.drawRoundedRect(
+            int(s * 0.16), int(s * 0.32), int(s * 0.68), int(s * 0.48), 2.5, 2.5
+        )
+        tab = QPainterPath()
+        tab.moveTo(s * 0.16, s * 0.34)
+        tab.lineTo(s * 0.16, s * 0.22)
+        tab.lineTo(s * 0.42, s * 0.22)
+        tab.lineTo(s * 0.50, s * 0.32)
+        painter.drawPath(tab)
+
+    elif name == "import":
+        # Vaschetta inferiore
+        painter.drawLine(int(s * 0.20), int(s * 0.66), int(s * 0.20), int(s * 0.82))
+        painter.drawLine(int(s * 0.20), int(s * 0.82), int(s * 0.80), int(s * 0.82))
+        painter.drawLine(int(s * 0.80), int(s * 0.82), int(s * 0.80), int(s * 0.66))
+        # Freccia verso il basso
+        painter.drawLine(int(s * 0.50), int(s * 0.18), int(s * 0.50), int(s * 0.62))
+        painter.drawLine(int(s * 0.34), int(s * 0.46), int(s * 0.50), int(s * 0.62))
+        painter.drawLine(int(s * 0.66), int(s * 0.46), int(s * 0.50), int(s * 0.62))
+
+    elif name == "package":
+        # Pacco 3D isometrico
+        top_mid = QPointF(s * 0.50, s * 0.18)
+        right_mid = QPointF(s * 0.82, s * 0.34)
+        bot_mid = QPointF(s * 0.50, s * 0.82)
+        left_mid = QPointF(s * 0.18, s * 0.34)
+        center = QPointF(s * 0.50, s * 0.50)
+        right_bot = QPointF(s * 0.82, s * 0.66)
+        left_bot = QPointF(s * 0.18, s * 0.66)
+
+        path = QPainterPath()
+        path.moveTo(top_mid)
+        path.lineTo(right_mid)
+        path.lineTo(right_bot)
+        path.lineTo(bot_mid)
+        path.lineTo(left_bot)
+        path.lineTo(left_mid)
+        path.closeSubpath()
+        painter.drawPath(path)
+
+        painter.drawLine(center.toPoint(), left_mid.toPoint())
+        painter.drawLine(center.toPoint(), right_mid.toPoint())
+        painter.drawLine(center.toPoint(), bot_mid.toPoint())
+
+    elif name == "volume":
+        painter.drawRect(int(s * 0.18), int(s * 0.36), int(s * 0.16), int(s * 0.28))
+        cone = QPainterPath()
+        cone.moveTo(s * 0.34, s * 0.36)
+        cone.lineTo(s * 0.54, s * 0.22)
+        cone.lineTo(s * 0.54, s * 0.78)
+        cone.lineTo(s * 0.34, s * 0.64)
+        cone.closeSubpath()
+        painter.drawPath(cone)
+        painter.drawArc(int(s * 0.44), int(s * 0.32), int(s * 0.30), int(s * 0.36), -60 * 16, 120 * 16)
+        painter.drawArc(int(s * 0.44), int(s * 0.22), int(s * 0.44), int(s * 0.56), -60 * 16, 120 * 16)
+
+    elif name == "lock":
+        painter.drawRoundedRect(int(s * 0.24), int(s * 0.42), int(s * 0.52), int(s * 0.44), 3, 3)
+        painter.drawArc(int(s * 0.32), int(s * 0.18), int(s * 0.36), int(s * 0.48), 0, 180 * 16)
+        painter.drawLine(int(s * 0.32), int(s * 0.42), int(s * 0.32), int(s * 0.34))
+        painter.drawLine(int(s * 0.68), int(s * 0.42), int(s * 0.68), int(s * 0.34))
+
+    elif name in ("monitor", "screen"):
+        # Schermo rettangolare con supporto
+        painter.drawRoundedRect(int(s * 0.16), int(s * 0.20), int(s * 0.68), int(s * 0.48), 2.5, 2.5)
+        painter.drawLine(int(s * 0.50), int(s * 0.68), int(s * 0.50), int(s * 0.80))
+        painter.drawLine(int(s * 0.34), int(s * 0.80), int(s * 0.66), int(s * 0.80))
+
     painter.end()
     return QIcon(pixmap)
 
@@ -947,13 +1033,6 @@ def load_thumbnail(
     return rounded
 
 
-class AuraArtwork(QWidget):
-    """Elemento decorativo legacy (rimosso in v2.5)."""
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.hide()
-
-
 class CharacterCard(QFrame):
     """Card selezionabile della libreria con stile futuristico Cyber Glass."""
 
@@ -1021,7 +1100,7 @@ class CharacterCard(QFrame):
         self.preview.setPixmap(self.thumbnail_pixmap)
 
         # Inizializza QMovie solo se è una GIF (senza avviare il loop per risparmiare CPU)
-        if self.animation_path.lower().endswith(".gif"):
+        if self.animation_path and self.animation_path.lower().endswith(".gif"):
             self.movie = QMovie(self.animation_path)
             if self.movie.isValid():
                 self.movie.setScaledSize(QSize(preview_size, preview_size))
@@ -1108,7 +1187,6 @@ class CharacterCard(QFrame):
             else "background: rgba(255, 255, 255, 0.2); border-radius: 3px;"
         )
         repolish(self.status_label)
-        repolish(self.status_label)
 
     def cleanup_movie(self) -> None:
         """Ferma e pulisce il movie per evitare memory leak."""
@@ -1123,6 +1201,560 @@ class CharacterCard(QFrame):
         super().mousePressEvent(event)
 
 
+def _format_bytes(bytes_count: int) -> str:
+    """Formatta la dimensione in byte in formato leggibile (B, KB, MB)."""
+    if bytes_count < 1024:
+        return f"{bytes_count} B"
+    elif bytes_count < 1024 * 1024:
+        return f"{bytes_count / 1024:.1f} KB"
+    else:
+        return f"{bytes_count / (1024 * 1024):.1f} MB"
+
+
+class ExportAuraDialog(QDialog):
+    """Dialog personalizzabile per l'esportazione di un personaggio in formato pacchetto .aura."""
+
+    def __init__(self, character: Character, translations=None, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.character = character
+        self.translations = translations
+        self.setup_ui()
+
+    def setup_ui(self) -> None:
+        title = self.translations.get("export_title", "Esporta Personaggio") if self.translations else "Esporta Personaggio"
+        self.setWindowTitle(f"{title} - {self.character.name}")
+        self.setMinimumWidth(460)
+        checkmark = resource_path("loghi/checkmark.png").replace("\\", "/")
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #0B101D;
+                color: #F1F5F9;
+                font-family: "Segoe UI Variable", "Segoe UI", "Inter", sans-serif;
+            }}
+            QLabel {{
+                border: none;
+                background: transparent;
+                color: #F1F5F9;
+            }}
+            QLabel#fieldLabel {{
+                color: #94A3B8;
+                font-size: 11px;
+                font-weight: 750;
+                letter-spacing: 0.8px;
+            }}
+            QCheckBox {{
+                color: #E2E8F0;
+                spacing: 8px;
+                font-size: 12px;
+            }}
+            QCheckBox:disabled {{
+                color: #64748B;
+            }}
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                background: rgba(11, 16, 29, 0.85);
+            }}
+            QCheckBox::indicator:checked {{
+                background: #6366F1;
+                border-color: #6366F1;
+                image: url("{checkmark}");
+            }}
+            QCheckBox::indicator:checked:disabled {{
+                background: rgba(99, 102, 241, 0.45);
+                border-color: rgba(99, 102, 241, 0.5);
+                image: url("{checkmark}");
+            }}
+            QCheckBox::indicator:disabled {{
+                border-color: rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.05);
+            }}
+            QLineEdit {{
+                min-height: 38px;
+                background: rgba(15, 23, 42, 0.85);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 10px;
+                padding: 0 12px;
+                font-size: 12px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid #6366F1;
+                background: rgba(15, 23, 42, 0.95);
+            }}
+            QPushButton {{
+                min-height: 38px;
+                padding: 0 16px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #F1F5F9;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 650;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.11);
+            }}
+            QPushButton[class="primary"] {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #818CF8);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                font-weight: 700;
+            }}
+            QPushButton[class="primary"]:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #818CF8, stop:1 #6366F1);
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(14)
+
+        # Header con anteprima e info
+        header = QHBoxLayout()
+        header.setSpacing(14)
+
+        preview = QLabel()
+        preview.setFixedSize(76, 76)
+        preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview.setStyleSheet("background: rgba(8, 12, 22, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;")
+        anim_path = self.character.get_animation_path()
+        thumb = load_thumbnail(anim_path, 76, 76, 10)
+        preview.setPixmap(thumb if thumb else draw_placeholder_icon(76, 76, 0.28))
+        header.addWidget(preview)
+
+        meta = QVBoxLayout()
+        meta.setSpacing(3)
+        name_lbl = QLabel(self.character.name)
+        name_lbl.setStyleSheet("font-size: 17px; font-weight: 750; color: #FFFFFF;")
+        meta.addWidget(name_lbl)
+
+        anim_size = 0
+        if os.path.exists(anim_path):
+            anim_size = os.path.getsize(anim_path)
+        file_info = QLabel(f"{os.path.basename(anim_path)} ({_format_bytes(anim_size)})")
+        file_info.setStyleSheet("font-size: 11px; color: #94A3B8; font-family: monospace;")
+        meta.addWidget(file_info)
+
+        has_audio = self.character.has_audio()
+        audio_size = 0
+        if has_audio:
+            audio_path = self.character.get_audio_path()
+            if audio_path and os.path.exists(audio_path):
+                audio_size = os.path.getsize(audio_path)
+        header.addLayout(meta, 1)
+        layout.addLayout(header)
+
+        # Divisore
+        div = QFrame()
+        div.setFixedHeight(1)
+        div.setStyleSheet("background: rgba(255, 255, 255, 0.07); border: none;")
+        layout.addWidget(div)
+
+        # Sezione Contenuto
+        content_lbl = QLabel(self.translations.get("export_content", "CONTENUTO") if self.translations else "CONTENUTO")
+        content_lbl.setObjectName("fieldLabel")
+        layout.addWidget(content_lbl)
+
+        anim_text = self.translations.get("export_animation", "Animazione") if self.translations else "Animazione"
+        anim_info_row = QLabel(f"✓  {anim_text}: {os.path.basename(anim_path)} ({_format_bytes(anim_size)})")
+        anim_info_row.setStyleSheet("font-size: 12px; color: #CBD5E1; padding: 2px 0;")
+        layout.addWidget(anim_info_row)
+
+        audio_text = self.translations.get("export_audio", "Audio") if self.translations else "Audio"
+        if has_audio:
+            self.audio_cb = QCheckBox(f"{audio_text}: {os.path.basename(self.character.get_audio_path())} ({_format_bytes(audio_size)})")
+            self.audio_cb.setChecked(True)
+            layout.addWidget(self.audio_cb)
+        else:
+            no_audio_desc = self.translations.get("export_no_audio", "Nessun file audio associato") if self.translations else "Nessun file audio associato"
+            audio_info_row = QLabel(f"•  {audio_text}: {no_audio_desc}")
+            audio_info_row.setStyleSheet("font-size: 12px; color: #64748B; font-style: italic; padding: 2px 0;")
+            layout.addWidget(audio_info_row)
+
+        thumb_text = self.translations.get("export_thumbnail", "Anteprima") if self.translations else "Anteprima"
+        thumb_auto_desc = self.translations.get("export_thumb_auto", "Generata automaticamente (150x150)") if self.translations else "Generata automaticamente (150x150)"
+        thumb_info_row = QLabel(f"✓  {thumb_text}: {thumb_auto_desc}")
+        thumb_info_row.setStyleSheet("font-size: 12px; color: #CBD5E1; padding: 2px 0;")
+        layout.addWidget(thumb_info_row)
+
+        # Sezione Configurazione
+        config_lbl = QLabel(self.translations.get("export_config", "CONFIGURAZIONE") if self.translations else "CONFIGURAZIONE")
+        config_lbl.setObjectName("fieldLabel")
+        layout.addWidget(config_lbl)
+
+        cfg_grid = QGridLayout()
+        cfg_grid.setHorizontalSpacing(14)
+        cfg_grid.setVerticalSpacing(8)
+
+        beh_text = self.translations.get("export_behavior", "Comportamento") if self.translations else "Comportamento"
+        self.beh_cb = QCheckBox(f"{beh_text} ({self.character.behavior})")
+        self.beh_cb.setChecked(True)
+        cfg_grid.addWidget(self.beh_cb, 0, 0)
+
+        fps_text = self.translations.get("export_fps", "Frame Rate") if self.translations else "Frame Rate"
+        fps_val = self.character.fps if self.character.fps else 30
+        self.fps_cb = QCheckBox(f"{fps_text} ({fps_val} FPS)")
+        self.fps_cb.setChecked(True)
+        cfg_grid.addWidget(self.fps_cb, 0, 1)
+
+        scale_text = self.translations.get("export_scale", "Dimensione") if self.translations else "Dimensione"
+        scale_val = self.character.scale if self.character.scale else 100
+        self.scale_cb = QCheckBox(f"{scale_text} ({scale_val}%)")
+        self.scale_cb.setChecked(True)
+        cfg_grid.addWidget(self.scale_cb, 1, 0)
+
+        vol_text = self.translations.get("export_volume", "Volume") if self.translations else "Volume"
+        vol_val = int((self.character.volume or 0.5) * 100)
+        self.vol_cb = QCheckBox(f"{vol_text} ({vol_val}%)")
+        self.vol_cb.setChecked(True)
+        cfg_grid.addWidget(self.vol_cb, 1, 1)
+
+        lock_text = self.translations.get("export_lock", "Stato blocco") if self.translations else "Stato blocco"
+        status_locked = self.translations.get("status_locked", "Bloccato") if self.translations else "Bloccato"
+        status_unlocked = self.translations.get("status_unlocked", "Sbloccato") if self.translations else "Sbloccato"
+        lock_status = status_locked if self.character.locked else status_unlocked
+        self.lock_cb = QCheckBox(f"{lock_text} ({lock_status})")
+        self.lock_cb.setChecked(True)
+        cfg_grid.addWidget(self.lock_cb, 2, 0)
+
+        layout.addLayout(cfg_grid)
+
+        # Note personalizzate
+        notes_lbl = QLabel(self.translations.get("export_notes", "NOTE PERSONALIZZATE") if self.translations else "NOTE PERSONALIZZATE")
+        notes_lbl.setObjectName("fieldLabel")
+        layout.addWidget(notes_lbl)
+
+        notes_hint = self.translations.get("export_notes_hint", "Opzionale, visibile a chi importa") if self.translations else "Opzionale, visibile a chi importa"
+        self.notes_input = QLineEdit()
+        self.notes_input.setPlaceholderText(notes_hint)
+        layout.addWidget(self.notes_input)
+
+        # Stima dimensione
+        total_est = anim_size + (audio_size if has_audio else 0)
+        est_lbl = QLabel(f"{self.translations.get('export_size_estimate', 'Dimensione stimata') if self.translations else 'Dimensione stimata'}: ~{_format_bytes(total_est)}")
+        est_lbl.setStyleSheet("font-size: 11px; color: #64748B;")
+        layout.addWidget(est_lbl)
+
+        # Pulsanti azione
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton(self.translations.get("btn_cancel", "Annulla") if self.translations else "Annulla")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        export_btn = QPushButton(self.translations.get("btn_export_aura", "Esporta .aura") if self.translations else "Esporta .aura")
+        export_btn.setProperty("class", "primary")
+        export_btn.clicked.connect(self.accept)
+        btn_row.addWidget(export_btn)
+
+        layout.addLayout(btn_row)
+
+    def get_export_options(self) -> dict:
+        include_audio = False
+        if hasattr(self, "audio_cb") and self.character.has_audio():
+            include_audio = self.audio_cb.isChecked()
+        return {
+            "include_audio": include_audio,
+            "include_behavior": self.beh_cb.isChecked(),
+            "include_fps": self.fps_cb.isChecked(),
+            "include_scale": self.scale_cb.isChecked(),
+            "include_volume": self.vol_cb.isChecked(),
+            "include_locked": self.lock_cb.isChecked(),
+            "author_note": self.notes_input.text().strip(),
+        }
+
+
+class ImportAuraDialog(QDialog):
+    """Dialog con anteprima e personalizzazione prima dell'importazione di un pacchetto .aura."""
+
+    def __init__(self, manifest: dict, thumbnail_pixmap: Optional[QPixmap], anim_path: Optional[str], translations=None, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.manifest = manifest
+        self.thumbnail_pixmap = thumbnail_pixmap
+        self.anim_path = anim_path
+        self.translations = translations
+        self.setup_ui()
+
+    def setup_ui(self) -> None:
+        title = self.translations.get("import_title", "Importa Personaggio") if self.translations else "Importa Personaggio"
+        self.setWindowTitle(title)
+        self.setMinimumWidth(460)
+        checkmark = resource_path("loghi/checkmark.png").replace("\\", "/")
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #0B101D;
+                color: #F1F5F9;
+                font-family: "Segoe UI Variable", "Segoe UI", "Inter", sans-serif;
+            }}
+            QLabel {{
+                border: none;
+                background: transparent;
+                color: #F1F5F9;
+            }}
+            QLabel#fieldLabel {{
+                color: #94A3B8;
+                font-size: 11px;
+                font-weight: 750;
+                letter-spacing: 0.8px;
+            }}
+            QCheckBox {{
+                color: #E2E8F0;
+                spacing: 8px;
+                font-size: 12px;
+            }}
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                background: rgba(11, 16, 29, 0.85);
+            }}
+            QCheckBox::indicator:checked {{
+                background: #6366F1;
+                border-color: #6366F1;
+                image: url("{checkmark}");
+            }}
+            QLineEdit {{
+                min-height: 38px;
+                background: rgba(15, 23, 42, 0.85);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 10px;
+                padding: 0 12px;
+                font-size: 12px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid #6366F1;
+                background: rgba(15, 23, 42, 0.95);
+            }}
+            QPushButton {{
+                min-height: 38px;
+                padding: 0 16px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #F1F5F9;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 650;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.11);
+            }}
+            QPushButton[class="primary"] {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366F1, stop:1 #818CF8);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                font-weight: 700;
+            }}
+            QPushButton[class="primary"]:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #818CF8, stop:1 #6366F1);
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(14)
+
+        # Header con anteprima e info
+        header = QHBoxLayout()
+        header.setSpacing(14)
+
+        preview = QLabel()
+        preview.setFixedSize(76, 76)
+        preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview.setStyleSheet("background: rgba(8, 12, 22, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;")
+        if self.thumbnail_pixmap and not self.thumbnail_pixmap.isNull():
+            preview.setPixmap(self.thumbnail_pixmap)
+        else:
+            preview.setPixmap(draw_placeholder_icon(76, 76, 0.28))
+        header.addWidget(preview)
+
+        meta = QVBoxLayout()
+        meta.setSpacing(3)
+        orig_name = self.manifest.get("name", "Unnamed")
+        title_lbl = QLabel(orig_name)
+        title_lbl.setStyleSheet("font-size: 17px; font-weight: 750; color: #FFFFFF;")
+        meta.addWidget(title_lbl)
+
+        created_at = self.manifest.get("created_at", "")
+        aura_ver = self.manifest.get("aura_app_version", APP_VERSION)
+        created_text = self.translations.get("import_created", "Creato il") if self.translations else "Creato il"
+        meta_info = QLabel(f"{created_text}: {created_at} • Aura Layer v{aura_ver}")
+        meta_info.setStyleSheet("font-size: 11px; color: #94A3B8;")
+        meta.addWidget(meta_info)
+
+        header.addLayout(meta, 1)
+        layout.addLayout(header)
+
+        # Note autore se presenti
+        author_note = self.manifest.get("author_note", "").strip()
+        if author_note:
+            note_box = QFrame()
+            note_box.setStyleSheet("background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 10px; padding: 10px;")
+            note_layout = QVBoxLayout(note_box)
+            note_layout.setContentsMargins(10, 8, 10, 8)
+            note_layout.setSpacing(2)
+            note_hdr = QLabel(f"💬 {self.translations.get('import_author_note', 'Nota dell\'autore') if self.translations else 'Nota dell\'autore'}:")
+            note_hdr.setStyleSheet("font-size: 10px; font-weight: 700; color: #A5B4FC;")
+            note_layout.addWidget(note_hdr)
+            note_txt = QLabel(author_note)
+            note_txt.setStyleSheet("font-size: 12px; color: #FFFFFF; font-style: italic;")
+            note_txt.setWordWrap(True)
+            note_layout.addWidget(note_txt)
+            layout.addWidget(note_box)
+
+        # Divisore
+        div = QFrame()
+        div.setFixedHeight(1)
+        div.setStyleSheet("background: rgba(255, 255, 255, 0.07); border: none;")
+        layout.addWidget(div)
+
+        # Sezione Nome
+        name_lbl = QLabel(self.translations.get("import_name", "NOME") if self.translations else "NOME")
+        name_lbl.setObjectName("fieldLabel")
+        layout.addWidget(name_lbl)
+
+        self.name_input = QLineEdit(orig_name)
+        layout.addWidget(self.name_input)
+
+        hint_name = QLabel(self.translations.get("import_name_hint", "Puoi cambiare il nome prima di importare") if self.translations else "Puoi cambiare il nome prima di importare")
+        hint_name.setStyleSheet("font-size: 10px; color: #64748B;")
+        layout.addWidget(hint_name)
+
+        # Sezione Contenuto Incluso
+        content_lbl = QLabel(self.translations.get("import_content_included", "CONTENUTO INCLUSO") if self.translations else "CONTENUTO INCLUSO")
+        content_lbl.setObjectName("fieldLabel")
+        layout.addWidget(content_lbl)
+
+        anim_info = self.manifest.get("animation", {})
+        anim_fname = anim_info.get("filename", "animation")
+        anim_text = self.translations.get("export_animation", "Animazione") if self.translations else "Animazione"
+        anim_lbl = QLabel(f"• {anim_text}: {anim_fname}")
+        anim_lbl.setStyleSheet("font-size: 12px; color: #CBD5E1;")
+        layout.addWidget(anim_lbl)
+
+        audio_info = self.manifest.get("audio", {})
+        audio_text = self.translations.get("export_audio", "Audio") if self.translations else "Audio"
+        if audio_info.get("included") and audio_info.get("filename"):
+            audio_lbl = QLabel(f"• {audio_text}: {audio_info.get('filename')}")
+            audio_lbl.setStyleSheet("font-size: 12px; color: #CBD5E1;")
+        else:
+            no_audio_text = self.translations.get("no_audio", "Nessuno") if self.translations else "Nessuno"
+            audio_lbl = QLabel(f"• {audio_text}: {no_audio_text}")
+            audio_lbl.setStyleSheet("font-size: 12px; color: #64748B; font-style: italic;")
+        layout.addWidget(audio_lbl)
+
+        # Sezione Configurazione Inclusa
+        cfg = self.manifest.get("config", {})
+        if cfg:
+            cfg_lbl = QLabel(self.translations.get("import_config_included", "CONFIGURAZIONE INCLUSA") if self.translations else "CONFIGURAZIONE INCLUSA")
+            cfg_lbl.setObjectName("fieldLabel")
+            layout.addWidget(cfg_lbl)
+
+            apply_text = self.translations.get("import_apply", "Applicare") if self.translations else "Applicare"
+            cfg_grid = QGridLayout()
+            cfg_grid.setHorizontalSpacing(14)
+            cfg_grid.setVerticalSpacing(8)
+
+            row = 0
+            if "behavior" in cfg:
+                beh_val = cfg["behavior"]
+                self.beh_cb = QCheckBox(f"{apply_text} {self.translations.get('export_behavior', 'Comportamento') if self.translations else 'Comportamento'}: {beh_val}")
+                self.beh_cb.setChecked(True)
+                cfg_grid.addWidget(self.beh_cb, row // 2, row % 2)
+                row += 1
+
+            if "fps" in cfg:
+                fps_val = cfg["fps"]
+                self.fps_cb = QCheckBox(f"{apply_text} FPS: {fps_val}")
+                self.fps_cb.setChecked(True)
+                cfg_grid.addWidget(self.fps_cb, row // 2, row % 2)
+                row += 1
+
+            if "scale" in cfg:
+                scale_val = cfg["scale"]
+                self.scale_cb = QCheckBox(f"{apply_text} {self.translations.get('export_scale', 'Dimensione') if self.translations else 'Dimensione'}: {scale_val}%")
+                self.scale_cb.setChecked(True)
+                cfg_grid.addWidget(self.scale_cb, row // 2, row % 2)
+                row += 1
+
+            if "volume" in cfg:
+                vol_val = int(cfg["volume"] * 100)
+                self.vol_cb = QCheckBox(f"{apply_text} Volume: {vol_val}%")
+                self.vol_cb.setChecked(True)
+                cfg_grid.addWidget(self.vol_cb, row // 2, row % 2)
+                row += 1
+
+            if "locked" in cfg:
+                status_locked = self.translations.get("status_locked", "Bloccato") if self.translations else "Bloccato"
+                status_unlocked = self.translations.get("status_unlocked", "Sbloccato") if self.translations else "Sbloccato"
+                lock_status = status_locked if cfg["locked"] else status_unlocked
+                self.lock_cb = QCheckBox(f"{apply_text} Click-through: {lock_status}")
+                self.lock_cb.setChecked(True)
+                cfg_grid.addWidget(self.lock_cb, row // 2, row % 2)
+                row += 1
+
+            layout.addLayout(cfg_grid)
+
+            deselect_hint = QLabel(self.translations.get("import_deselect_hint", "Deseleziona per usare i valori predefiniti") if self.translations else "Deseleziona per usare i valori predefiniti")
+            deselect_hint.setStyleSheet("font-size: 10px; color: #64748B;")
+            layout.addWidget(deselect_hint)
+
+        # Pulsanti azione
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton(self.translations.get("btn_cancel", "Annulla") if self.translations else "Annulla")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        import_btn = QPushButton(self.translations.get("btn_import_aura", "Importa") if self.translations else "Importa")
+        import_btn.setProperty("class", "primary")
+        import_btn.clicked.connect(self.accept)
+        btn_row.addWidget(import_btn)
+
+        layout.addLayout(btn_row)
+
+    def get_import_options(self) -> dict:
+        return {
+            "name": self.name_input.text().strip(),
+            "apply_behavior": self.beh_cb.isChecked() if hasattr(self, "beh_cb") else False,
+            "apply_fps": self.fps_cb.isChecked() if hasattr(self, "fps_cb") else False,
+            "apply_scale": self.scale_cb.isChecked() if hasattr(self, "scale_cb") else False,
+            "apply_volume": self.vol_cb.isChecked() if hasattr(self, "vol_cb") else False,
+            "apply_locked": self.lock_cb.isChecked() if hasattr(self, "lock_cb") else False,
+        }
+
+
+class BackgroundRemovalThread(QThread):
+    """Thread di worker per la rimozione dello sfondo con AI senza bloccare la GUI."""
+    finished = pyqtSignal(bool, str, str)
+
+    def __init__(self, input_path: str, output_path: str, backup_path: str, parent=None):
+        super().__init__(parent)
+        self.input_path = input_path
+        self.output_path = output_path
+        self.backup_path = backup_path
+
+    def run(self):
+        try:
+            # Import locale per evitare caricamento lento all'avvio
+            from src.background_remover import BackgroundRemover
+            # Rimuovi sfondo
+            success = BackgroundRemover.remove_background(self.input_path, self.output_path)
+            self.finished.emit(success, self.output_path, self.backup_path)
+        except Exception as e:
+            # Cattura qualsiasi eccezione per evitare crash dell'app
+            print(f"Errore durante rimozione sfondo: {e}")
+            self.finished.emit(False, self.output_path, self.backup_path)
+
+
 class LauncherWindow(QMainWindow):
     """Finestra principale del launcher Aura Layer."""
 
@@ -1133,7 +1765,9 @@ class LauncherWindow(QMainWindow):
     character_renamed = pyqtSignal(str, str)
     character_updated = pyqtSignal(str)
     character_lock_changed = pyqtSignal(str, bool)  # character_name, locked
+    character_screen_changed = pyqtSignal(str, str)  # character_name, screen_name
     global_fps_changed = pyqtSignal(int)
+    fullscreen_pause_changed = pyqtSignal(bool)
     quit_requested = pyqtSignal()  # Richiesta di chiusura dell'app
 
     def __init__(
@@ -1149,6 +1783,8 @@ class LauncherWindow(QMainWindow):
         self.current_filter = ""
         self.current_sort = "az"
         self.details_movie: Optional[QMovie] = None
+        self.preview_audio_manager = AudioManager()
+        self.preview_audio_manager.audio_finished.connect(self._on_preview_audio_finished)
 
         self.setup_ui()
         if self.config_manager:
@@ -1510,9 +2146,8 @@ class LauncherWindow(QMainWindow):
         self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_title)
 
-        self.empty_text = QLabel(
-            "Aggiungi un file GIF, PNG, WEBP o APNG per iniziare."
-        )
+        add_files_desc = self.translations.get("search_add_files", "Aggiungi un file GIF, PNG, WEBP o APNG per iniziare.") if self.translations else "Aggiungi un file GIF, PNG, WEBP o APNG per iniziare."
+        self.empty_text = QLabel(add_files_desc)
         self.empty_text.setObjectName("emptyText")
         self.empty_text.setWordWrap(True)
         self.empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1627,6 +2262,12 @@ class LauncherWindow(QMainWindow):
         self.behavior_combo.currentIndexChanged.connect(self.on_behavior_changed)
         behavior_container.addWidget(self.behavior_combo)
 
+        # Descrizione dinamica del comportamento per l'utente
+        self.behavior_desc_label = QLabel()
+        self.behavior_desc_label.setWordWrap(True)
+        self.behavior_desc_label.setStyleSheet("color: #94A3B8; font-size: 11px; padding: 2px 2px 4px 2px; line-height: 130%;")
+        behavior_container.addWidget(self.behavior_desc_label)
+
         # Pulsante lock/click-through
         lock_text = self.translations.get("btn_lock", "Click-through (Bloccato)") if self.translations else "Click-through (Bloccato)"
         self.lock_button = QPushButton(lock_text)
@@ -1637,6 +2278,24 @@ class LauncherWindow(QMainWindow):
         self.lock_button.clicked.connect(self.on_lock_changed)
         behavior_container.addWidget(self.lock_button)
         layout.addLayout(behavior_container)
+
+        # Sezione Schermo Assegnato (visibile solo se sono collegati 2 o più monitor)
+        self.screen_container = QWidget()
+        screen_layout = QVBoxLayout(self.screen_container)
+        screen_layout.setContentsMargins(0, 0, 0, 0)
+        screen_layout.setSpacing(6)
+
+        screen_text = self.translations.get("details_screen", "SCHERMO") if self.translations else "SCHERMO"
+        screen_label = QLabel(screen_text)
+        screen_label.setObjectName("fieldLabel")
+        screen_layout.addWidget(screen_label)
+
+        self.screen_combo = NoScrollComboBox()
+        self.screen_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.screen_combo.currentIndexChanged.connect(self.on_screen_changed)
+        screen_layout.addWidget(self.screen_combo)
+
+        layout.addWidget(self.screen_container)
 
         # Sezione Dimensioni & FPS (Input numerico con tastiera e frecce!)
         settings_row = QHBoxLayout()
@@ -1679,7 +2338,8 @@ class LauncherWindow(QMainWindow):
         # Sezione Strumenti AI
         ai_container = QVBoxLayout()
         ai_container.setSpacing(6)
-        ai_header = QLabel("STRUMENTI GRAFICA & AI")
+        ai_header_text = self.translations.get("details_ai_tools", "STRUMENTI GRAFICA & AI") if self.translations else "STRUMENTI GRAFICA & AI"
+        ai_header = QLabel(ai_header_text)
         ai_header.setObjectName("fieldLabel")
         ai_container.addWidget(ai_header)
 
@@ -1721,6 +2381,30 @@ class LauncherWindow(QMainWindow):
         audio_row.addWidget(self.audio_browse_button)
         audio_container.addLayout(audio_row)
 
+        # Azioni rapide audio: Ascolta anteprima e Rimuovi
+        audio_actions_row = QHBoxLayout()
+        audio_actions_row.setSpacing(8)
+
+        preview_text = self.translations.get("btn_audio_preview", "Ascolta anteprima") if self.translations else "Ascolta anteprima"
+        self.audio_preview_button = QPushButton(preview_text)
+        self.audio_preview_button.setProperty("class", "secondary")
+        self.audio_preview_button.setIcon(make_icon("play", "#DCE4F0", 14))
+        self.audio_preview_button.setIconSize(QSize(14, 14))
+        self.audio_preview_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.audio_preview_button.clicked.connect(self.on_audio_preview_clicked)
+        audio_actions_row.addWidget(self.audio_preview_button, 1)
+
+        remove_audio_text = self.translations.get("btn_audio_remove", "Rimuovi audio") if self.translations else "Rimuovi audio"
+        self.audio_remove_button = QPushButton(remove_audio_text)
+        self.audio_remove_button.setProperty("class", "secondary")
+        self.audio_remove_button.setIcon(make_icon("trash", "#FB7185", 14))
+        self.audio_remove_button.setIconSize(QSize(14, 14))
+        self.audio_remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.audio_remove_button.clicked.connect(self.on_audio_remove_clicked)
+        audio_actions_row.addWidget(self.audio_remove_button)
+
+        audio_container.addLayout(audio_actions_row)
+
         volume_container = QVBoxLayout()
         volume_container.setSpacing(4)
         volume_text = self.translations.get("details_volume", "VOLUME") if self.translations else "VOLUME"
@@ -1734,7 +2418,27 @@ class LauncherWindow(QMainWindow):
         volume_container.addWidget(self.volume_slider)
         audio_container.addLayout(volume_container)
 
+        startup_audio_text = self.translations.get("audio_play_on_startup", "Riproduci audio all'avvio") if self.translations else "Riproduci audio all'avvio"
+        self.audio_startup_checkbox = QCheckBox(startup_audio_text)
+        self.audio_startup_checkbox.setObjectName("settingsCheckbox")
+        self.audio_startup_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.audio_startup_checkbox.toggled.connect(self.on_audio_startup_toggled)
+        audio_container.addWidget(self.audio_startup_checkbox)
+
         layout.addLayout(audio_container)
+
+        # Sezione Condivisione / Esportazione
+        share_container = QVBoxLayout()
+        share_container.setSpacing(6)
+        export_text = self.translations.get("btn_export_aura", "Esporta .aura") if self.translations else "Esporta .aura"
+        self.export_button = QPushButton(export_text)
+        self.export_button.setProperty("class", "secondary")
+        self.export_button.setIcon(make_icon("folder", "#DCE4F0", 15))
+        self.export_button.setIconSize(QSize(15, 15))
+        self.export_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_button.clicked.connect(self.export_character_aura)
+        share_container.addWidget(self.export_button)
+        layout.addLayout(share_container)
 
         layout.addStretch()
 
@@ -1764,40 +2468,98 @@ class LauncherWindow(QMainWindow):
         layout.setContentsMargins(30, 24, 30, 28)
         layout.setSpacing(16)
 
-        intro = QFrame()
-        intro.setObjectName("settingsCard")
-        intro_layout = QHBoxLayout(intro)
-        intro_layout.setContentsMargins(22, 20, 22, 20)
-        intro_layout.setSpacing(14)
+        # Sezione Pacchetti & Libreria Personaggi
+        packages_card = QFrame()
+        packages_card.setObjectName("settingsCard")
+        packages_layout = QVBoxLayout(packages_card)
+        packages_layout.setContentsMargins(22, 20, 22, 20)
+        packages_layout.setSpacing(16)
 
-        icon = QLabel()
-        icon.setFixedSize(42, 42)
-        icon.setPixmap(make_icon("settings", "#F2A93B", 28).pixmap(28, 28))
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setStyleSheet(
-            "background: #312411; border: 1px solid #55401F; border-radius: 11px;"
+        # Header con icona e testi
+        pkg_header_layout = QHBoxLayout()
+        pkg_header_layout.setSpacing(14)
+
+        pkg_icon = QLabel()
+        pkg_icon.setFixedSize(42, 42)
+        pkg_icon.setPixmap(make_icon("package", "#818CF8", 26).pixmap(26, 26))
+        pkg_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pkg_icon.setStyleSheet(
+            "background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 11px;"
         )
+        pkg_header_layout.addWidget(pkg_icon)
 
-        intro_layout.addWidget(icon)
+        pkg_text_layout = QVBoxLayout()
+        pkg_text_layout.setSpacing(3)
+        pkg_title_text = self.translations.get("settings_packages_title", "Pacchetti e Libreria Personaggi") if self.translations else "Pacchetti e Libreria Personaggi"
+        pkg_title = QLabel(pkg_title_text)
+        pkg_title.setObjectName("sectionTitle")
 
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(3)
-        settings_title = self.translations.get("launcher_settings_title", "Impostazioni dell'applicazione") if self.translations else "Impostazioni dell'applicazione"
-        title = QLabel(settings_title)
-        title.setObjectName("sectionTitle")
-        settings_desc = self.translations.get("launcher_settings_desc", "Questa sezione è pronta per ospitare preferenze globali, avvio automatico e opzioni grafiche.") if self.translations else "Questa sezione è pronta per ospitare preferenze globali, avvio automatico e opzioni grafiche."
-        description = QLabel(settings_desc)
-        description.setObjectName("sectionCaption")
-        description.setWordWrap(True)
-        text_layout.addWidget(title)
-        text_layout.addWidget(description)
-        intro_layout.addLayout(text_layout, 1)
+        pkg_desc_text = self.translations.get("settings_packages_desc", "Importa nuovi compagni desktop da pacchetti .aura o gestisci i file locali.") if self.translations else "Importa nuovi compagni desktop da pacchetti .aura o gestisci i file locali."
+        pkg_desc = QLabel(pkg_desc_text)
+        pkg_desc.setObjectName("sectionCaption")
+        pkg_desc.setWordWrap(True)
 
-        coming_soon_text = self.translations.get("launcher_coming_soon", "IN ARRIVO") if self.translations else "IN ARRIVO"
-        badge = QLabel(coming_soon_text)
-        badge.setObjectName("comingSoonBadge")
-        intro_layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(intro)
+        pkg_text_layout.addWidget(pkg_title)
+        pkg_text_layout.addWidget(pkg_desc)
+        pkg_header_layout.addLayout(pkg_text_layout, 1)
+
+        packages_layout.addLayout(pkg_header_layout)
+
+        # 1. Riga Importa Compagno .aura
+        import_row = QHBoxLayout()
+        import_row.setSpacing(14)
+
+        import_info_layout = QVBoxLayout()
+        import_info_layout.setSpacing(2)
+        import_label = QLabel(self.translations.get("import_aura_title", "Importa Compagno .aura") if self.translations else "Importa Compagno .aura")
+        import_label.setObjectName("fieldLabel")
+        import_sub = QLabel(self.translations.get("import_aura_sub", "Aggiunge un personaggio preconfigurato con animazione, audio e parametri.") if self.translations else "Aggiunge un personaggio preconfigurato con animazione, audio e parametri.")
+        import_sub.setObjectName("infoText")
+        import_info_layout.addWidget(import_label)
+        import_info_layout.addWidget(import_sub)
+        import_row.addLayout(import_info_layout, 1)
+
+        self.import_aura_button = QPushButton(self.translations.get("btn_import_aura", "Importa .aura") if self.translations else "Importa .aura")
+        self.import_aura_button.setProperty("class", "primary")
+        self.import_aura_button.setIcon(make_icon("import", "#FFFFFF", 16))
+        self.import_aura_button.setIconSize(QSize(16, 16))
+        self.import_aura_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_aura_button.clicked.connect(self.import_character_aura)
+        import_row.addWidget(self.import_aura_button)
+
+        packages_layout.addLayout(import_row)
+
+        # 2. Riga Cartella personaggi su disco
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(14)
+
+        folder_info_layout = QVBoxLayout()
+        folder_info_layout.setSpacing(2)
+        folder_label = QLabel(self.translations.get("settings_folder", "Cartella personaggi:") if self.translations else "Cartella personaggi:")
+        folder_label.setObjectName("fieldLabel")
+
+        from src.utils import get_app_data_dir
+        self.folder_path_label = QLabel(os.path.join(get_app_data_dir(), "characters"))
+        self.folder_path_label.setObjectName("folderPath")
+        self.folder_path_label.setWordWrap(True)
+
+        folder_info_layout.addWidget(folder_label)
+        folder_info_layout.addWidget(self.folder_path_label)
+        folder_row.addLayout(folder_info_layout, 1)
+
+        open_folder_text = self.translations.get("btn_open_folder", "Apri cartella") if self.translations else "Apri cartella"
+        self.open_folder_button = QPushButton(open_folder_text)
+        self.open_folder_button.setProperty("class", "secondary")
+        self.open_folder_button.setIcon(make_icon("folder", "#DCE4F0", 15))
+        self.open_folder_button.setIconSize(QSize(15, 15))
+        self.open_folder_button.setMaximumWidth(130)
+        self.open_folder_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_folder_button.clicked.connect(self.on_open_folder)
+        folder_row.addWidget(self.open_folder_button)
+
+        packages_layout.addLayout(folder_row)
+
+        layout.addWidget(packages_card)
 
         # Sezione Avvio e sistema
         startup_card = QFrame()
@@ -2022,28 +2784,6 @@ class LauncherWindow(QMainWindow):
         self.global_fps_spin.valueChanged.connect(self.on_global_fps_changed)
         performance_layout.addWidget(self.global_fps_spin)
 
-        # Cartella personaggi
-        folder_text = self.translations.get("settings_folder", "Cartella personaggi:") if self.translations else "Cartella personaggi:"
-        folder_label = QLabel(folder_text)
-        folder_label.setObjectName("fieldLabel")
-        performance_layout.addWidget(folder_label)
-
-        folder_row = QHBoxLayout()
-        from src.utils import get_app_data_dir
-        self.folder_path_label = QLabel(os.path.join(get_app_data_dir(), "characters"))
-        self.folder_path_label.setObjectName("folderPath")
-        self.folder_path_label.setWordWrap(True)
-        folder_row.addWidget(self.folder_path_label, 1)
-
-        open_folder_text = self.translations.get("btn_open_folder", "Apri cartella") if self.translations else "Apri cartella"
-        self.open_folder_button = QPushButton(open_folder_text)
-        self.open_folder_button.setProperty("class", "secondary")
-        self.open_folder_button.setMaximumWidth(100)
-        self.open_folder_button.clicked.connect(self.on_open_folder)
-        folder_row.addWidget(self.open_folder_button)
-
-        performance_layout.addLayout(folder_row)
-
         layout.addWidget(performance_card)
 
         # Sezione Informazioni
@@ -2058,7 +2798,7 @@ class LauncherWindow(QMainWindow):
         info_title.setObjectName("sectionTitle")
         info_layout.addWidget(info_title)
 
-        version_text = self.translations.get("info_version", "Versione: 1.0.1") if self.translations else "Versione: 1.0.1"
+        version_text = self.translations.get("info_version", f"Versione: {APP_VERSION}") if self.translations else f"Versione: {APP_VERSION}"
         version_label = QLabel(version_text)
         version_label.setObjectName("infoText")
         info_layout.addWidget(version_label)
@@ -2163,6 +2903,7 @@ class LauncherWindow(QMainWindow):
     def on_fullscreen_pause_changed(self, checked: bool) -> None:
         """Gestisce il toggle Pausa automatica in giochi fullscreen."""
         self.config_manager.set_global_setting("fullscreen_pause", checked)
+        self.fullscreen_pause_changed.emit(checked)
 
     def on_default_behavior_changed(self, index: int) -> None:
         """Gestisce il cambio di comportamento predefinito."""
@@ -2208,11 +2949,8 @@ class LauncherWindow(QMainWindow):
 
     def on_open_folder(self) -> None:
         """Apre la cartella personaggi con Esplora risorse."""
-        import subprocess
-        import os
-        from src.utils import get_app_data_dir
         folder_path = os.path.join(get_app_data_dir(), "characters")
-        subprocess.Popen(f'explorer "{folder_path}"')
+        subprocess.Popen(["explorer", folder_path])
 
     def initialize_style_selector(self) -> None:
         """Inizializza il selettore di stile con la preferenza salvata."""
@@ -2286,46 +3024,19 @@ class LauncherWindow(QMainWindow):
         # Ottieni dimensione griglia dalle impostazioni
         grid_size = self.config_manager.get_global_setting("grid_size", "medium")
 
-        if not characters:
-            # Mostra messaggio quando la libreria è vuota
-            empty_widget = QWidget()
-            empty_layout = QVBoxLayout(empty_widget)
-            empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-            # Icona
-            icon_label = QLabel()
-            icon_label.setPixmap(make_icon("folder", StyleManager.COLORS["text_dim"], 64).pixmap(64, 64))
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_layout.addWidget(icon_label)
-
-            # Testo
-            empty_no_chars_text = self.translations.get("empty_no_characters", "Nessun personaggio ancora") if self.translations else "Nessun personaggio ancora"
-            title_label = QLabel(empty_no_chars_text)
-            title_label.setObjectName("emptyTitle")
-            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_layout.addWidget(title_label)
-
-            empty_add_text = self.translations.get("empty_add_pc", "Clicca Aggiungi da PC per iniziare") if self.translations else "Clicca Aggiungi da PC per iniziare"
-            subtitle_label = QLabel(empty_add_text)
-            subtitle_label.setObjectName("emptySubtitle")
-            subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            subtitle_label.setWordWrap(True)
-            empty_layout.addWidget(subtitle_label)
-
-            self.grid_layout.addWidget(empty_widget, 0, 0)
-        else:
-            for name, character in characters.items():
-                card = CharacterCard(
-                    name,
-                    character.character_path,
-                    character.get_animation_path(),
-                    parent=self.grid_widget,
-                    active=name in self.active_characters,
-                    grid_size=grid_size,
-                    translations=self.translations,
-                )
-                card.clicked.connect(self.on_character_selected)
-                self.character_cards[name] = card
+        # Popola le card dei personaggi (se vuoto, _reflow_grid mostra self.empty_page)
+        for name, character in characters.items():
+            card = CharacterCard(
+                name,
+                character.character_path,
+                character.get_animation_path(),
+                parent=self.grid_widget,
+                active=name in self.active_characters,
+                grid_size=grid_size,
+                translations=self.translations,
+            )
+            card.clicked.connect(self.on_character_selected)
+            self.character_cards[name] = card
 
         self.update_counters()
         self._reflow_grid()
@@ -2341,18 +3052,24 @@ class LauncherWindow(QMainWindow):
         if hasattr(self, "active_stat_value"):
             self.active_stat_value.setText(str(active))
         if hasattr(self, "sidebar_active_stat"):
+            side_single = self.translations.get("sidebar_active_single", "1 compagno attivo") if self.translations else "1 compagno attivo"
+            side_multi = self.translations.get("sidebar_active_multi", "{active} compagni attivi") if self.translations else "{active} compagni attivi"
             self.sidebar_active_stat.setText(
-                "1 compagno attivo" if active == 1 else f"{active} compagni attivi"
+                side_single if active == 1 else side_multi.format(active=active)
             )
 
         # Aggiorna top bar counter
+        top_single = self.translations.get("topbar_active_single", "1 attivo") if self.translations else "1 attivo"
+        top_multi = self.translations.get("topbar_active_multi", "{active} attivi") if self.translations else "{active} attivi"
         self.active_counter.setText(
-            "1 attivo" if active == 1 else f"{active} attivi"
+            top_single if active == 1 else top_multi.format(active=active)
         )
 
         # Aggiorna library count
+        lib_single = self.translations.get("library_count_single", "1 elemento") if self.translations else "1 elemento"
+        lib_multi = self.translations.get("library_count_multi", "{total} elementi") if self.translations else "{total} elementi"
         self.library_count_label.setText(
-            "1 elemento" if total == 1 else f"{total} elementi"
+            lib_single if total == 1 else lib_multi.format(total=total)
         )
 
         if self.selected_character not in self.character_cards:
@@ -2422,8 +3139,10 @@ class LauncherWindow(QMainWindow):
                 else f"1 {results_count_text} {total}"
             )
         else:
+            lib_single = self.translations.get("library_count_single", "1 elemento") if self.translations else "1 elemento"
+            lib_multi = self.translations.get("library_count_multi", "{total} elementi") if self.translations else "{total} elementi"
             self.library_count_label.setText(
-                "1 elemento" if total == 1 else f"{total} elementi"
+                lib_single if total == 1 else lib_multi.format(total=total)
             )
 
     def filter_characters(self, text: str) -> None:
@@ -2482,6 +3201,9 @@ class LauncherWindow(QMainWindow):
         self.behavior_combo.setCurrentIndex(max(0, behavior_index))
         self.behavior_combo.blockSignals(False)
 
+        # Aggiorna la descrizione del comportamento selezionato
+        self._update_behavior_description()
+
         self.fps_spin.blockSignals(True)
         self.fps_spin.setValue(character.fps or 30)
         self.fps_spin.blockSignals(False)
@@ -2497,13 +3219,39 @@ class LauncherWindow(QMainWindow):
         self.lock_button.setText(unlock_text if character.locked else lock_text)
         self.lock_button.blockSignals(False)
 
+        # Popola e seleziona lo schermo assegnato
+        self._populate_screen_combo()
+        if hasattr(self, "screen_combo"):
+            preferred = character.config.get("preferred_screen", "auto")
+            idx = self.screen_combo.findData(preferred)
+            self.screen_combo.blockSignals(True)
+            self.screen_combo.setCurrentIndex(max(0, idx))
+            self.screen_combo.blockSignals(False)
+
+        # Stop preview audio se in esecuzione sul personaggio precedente
+        if hasattr(self, "preview_audio_manager") and self.preview_audio_manager.is_playing():
+            self.preview_audio_manager.stop()
+            self._on_preview_audio_finished()
+
         # Aggiorna controlli audio
-        if character.has_audio():
+        has_audio = character.has_audio()
+        if has_audio:
             self.audio_path_label.setText(character.audio_file)
             self.audio_path_label.setStyleSheet("color: {};".format(StyleManager.COLORS["text"]))
         else:
-            self.audio_path_label.setText("Nessun audio")
+            no_audio_text = self.translations.get("no_audio", "Nessun audio") if self.translations else "Nessun audio"
+            self.audio_path_label.setText(no_audio_text)
             self.audio_path_label.setStyleSheet("")
+
+        if hasattr(self, "audio_preview_button"):
+            self.audio_preview_button.setEnabled(has_audio)
+        if hasattr(self, "audio_remove_button"):
+            self.audio_remove_button.setEnabled(has_audio)
+
+        if hasattr(self, "audio_startup_checkbox"):
+            self.audio_startup_checkbox.blockSignals(True)
+            self.audio_startup_checkbox.setChecked(character.config.get("play_audio_on_startup", True))
+            self.audio_startup_checkbox.blockSignals(False)
 
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(int(character.volume * 100))
@@ -2520,7 +3268,7 @@ class LauncherWindow(QMainWindow):
             self.details_movie = None
 
         animation_path = character.get_animation_path()
-        if animation_path.lower().endswith(".gif"):
+        if animation_path and animation_path.lower().endswith(".gif"):
             self.details_movie = QMovie(animation_path)
             if self.details_movie.isValid():
                 self.details_movie.setScaledSize(QSize(150, 150))
@@ -2547,10 +3295,28 @@ class LauncherWindow(QMainWindow):
 
     def _set_details_enabled(self, enabled: bool) -> None:
         self.behavior_combo.setEnabled(enabled)
+        if hasattr(self, "behavior_desc_label"):
+            self.behavior_desc_label.setEnabled(enabled)
         self.fps_spin.setEnabled(enabled)
         self.scale_spin.setEnabled(enabled)
         self.lock_button.setEnabled(enabled)
+        if hasattr(self, "screen_combo"):
+            self.screen_combo.setEnabled(enabled)
         self.audio_browse_button.setEnabled(enabled)
+        if hasattr(self, "audio_preview_button"):
+            has_audio = False
+            if enabled and self.selected_character:
+                c = self.character_manager.get_character(self.selected_character)
+                has_audio = c.has_audio() if c else False
+            self.audio_preview_button.setEnabled(has_audio)
+        if hasattr(self, "audio_remove_button"):
+            has_audio = False
+            if enabled and self.selected_character:
+                c = self.character_manager.get_character(self.selected_character)
+                has_audio = c.has_audio() if c else False
+            self.audio_remove_button.setEnabled(has_audio)
+        if hasattr(self, "audio_startup_checkbox"):
+            self.audio_startup_checkbox.setEnabled(enabled)
         self.volume_slider.setEnabled(enabled)
         self.remove_bg_button.setEnabled(enabled)
         self.restore_original_button.setEnabled(enabled)
@@ -2558,26 +3324,52 @@ class LauncherWindow(QMainWindow):
         self.take_button.setEnabled(False)
         self.rename_button.setEnabled(enabled)
         self.remove_button.setEnabled(enabled)
+        if hasattr(self, "export_button"):
+            self.export_button.setEnabled(enabled)
 
     def _reset_details_panel(self) -> None:
         if not hasattr(self, "character_name_label"):
             return
 
-        self.character_name_label.setText("Nessun personaggio")
+        if hasattr(self, "preview_audio_manager") and self.preview_audio_manager.is_playing():
+            self.preview_audio_manager.stop()
+            self._on_preview_audio_finished()
+
+        no_char_text = self.translations.get("no_character", "Nessun personaggio") if self.translations else "Nessun personaggio"
+        self.character_name_label.setText(no_char_text)
         self.large_preview.setPixmap(draw_placeholder_icon(150, 150, 0.30))
-        self.status_badge.setText("NON SELEZIONATO")
+        not_selected_text = self.translations.get("details_not_selected", "NON SELEZIONATO") if self.translations else "NON SELEZIONATO"
+        self.status_badge.setText(not_selected_text)
         self.status_badge.setProperty("status", "none")
         repolish(self.status_badge)
 
+        if hasattr(self, "behavior_desc_label"):
+            self.behavior_desc_label.setText("")
+
+        if hasattr(self, "screen_combo"):
+            self.screen_combo.blockSignals(True)
+            self.screen_combo.setCurrentIndex(0)
+            self.screen_combo.blockSignals(False)
+
         # Resetta lock_button
+        lock_text = self.translations.get("btn_lock", "Blocca") if self.translations else "Blocca"
         self.lock_button.blockSignals(True)
         self.lock_button.setChecked(False)
-        self.lock_button.setText("Blocca")
+        self.lock_button.setText(lock_text)
         self.lock_button.blockSignals(False)
 
         # Resetta controlli audio
-        self.audio_path_label.setText("Nessun audio")
+        no_audio_text = self.translations.get("no_audio", "Nessun audio") if self.translations else "Nessun audio"
+        self.audio_path_label.setText(no_audio_text)
         self.audio_path_label.setStyleSheet("")
+        if hasattr(self, "audio_preview_button"):
+            self.audio_preview_button.setEnabled(False)
+        if hasattr(self, "audio_remove_button"):
+            self.audio_remove_button.setEnabled(False)
+        if hasattr(self, "audio_startup_checkbox"):
+            self.audio_startup_checkbox.blockSignals(True)
+            self.audio_startup_checkbox.setChecked(True)
+            self.audio_startup_checkbox.blockSignals(False)
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(50)
         self.volume_slider.blockSignals(False)
@@ -2587,11 +3379,12 @@ class LauncherWindow(QMainWindow):
     # --------------------------------------------------------------- Azioni
     def add_character_from_pc(self) -> None:
         dialog_select_animation_text = self.translations.get("dialog_select_animation", "Seleziona animazione") if self.translations else "Seleziona animazione"
+        anim_filter_text = self.translations.get("filter_animation_files", "File animazione (*.gif *.png *.webp *.apng)") if self.translations else "File animazione (*.gif *.png *.webp *.apng)"
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             dialog_select_animation_text,
             "",
-            "File animazione (*.gif *.png *.webp *.apng)",
+            anim_filter_text,
         )
 
         if not file_path:
@@ -2631,12 +3424,7 @@ class LauncherWindow(QMainWindow):
                 "locked": False,
             }
 
-            with open(
-                os.path.join(character_path, "config.json"),
-                "w",
-                encoding="utf-8",
-            ) as file:
-                json.dump(config, file, indent=2, ensure_ascii=False)
+            atomic_write_json(os.path.join(character_path, "config.json"), config)
 
         except OSError as error:
             if os.path.isdir(character_path):
@@ -2673,11 +3461,12 @@ class LauncherWindow(QMainWindow):
 
         removed_name = self.selected_character
         remove_character_text = self.translations.get("dialog_remove_character", "Rimuovi personaggio") if self.translations else "Rimuovi personaggio"
-        remove_confirm_text = self.translations.get("dialog_remove_confirm", "Vuoi rimuovere definitivamente") if self.translations else "Vuoi rimuovere definitivamente"
+        remove_confirm_template = self.translations.get("dialog_remove_confirm", "Vuoi rimuovere definitivamente \"{name}\" dalla libreria?") if self.translations else "Vuoi rimuovere definitivamente \"{name}\" dalla libreria?"
+        confirm_text = remove_confirm_template.format(name=removed_name) if "{name}" in remove_confirm_template else f"{remove_confirm_template} \"{removed_name}\"?"
         reply = QMessageBox.question(
             self,
             remove_character_text,
-            f"{remove_confirm_text} \"{removed_name}\" dalla libreria?",
+            confirm_text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -2701,6 +3490,7 @@ class LauncherWindow(QMainWindow):
 
         self.active_characters.discard(removed_name)
         self.selected_character = None
+        self._reset_details_panel()
         self.load_characters()
         self.character_removed.emit(removed_name)
 
@@ -2752,8 +3542,7 @@ class LauncherWindow(QMainWindow):
             with open(config_path, "r", encoding="utf-8") as file:
                 config = json.load(file)
             config["name"] = new_name
-            with open(config_path, "w", encoding="utf-8") as file:
-                json.dump(config, file, indent=2, ensure_ascii=False)
+            atomic_write_json(config_path, config)
         except (OSError, json.JSONDecodeError) as error:
             rename_failed_text = self.translations.get("dialog_rename_failed", "Rinomina non riuscita") if self.translations else "Rinomina non riuscita"
             rename_error_text = self.translations.get("dialog_rename_error", "Non è stato possibile rinominare il personaggio.") if self.translations else "Non è stato possibile rinominare il personaggio."
@@ -2774,6 +3563,273 @@ class LauncherWindow(QMainWindow):
             self.on_character_selected(new_name)
         self.character_renamed.emit(old_name, new_name)
 
+    def _get_unique_character_name(self, base_name: str) -> str:
+        """Restituisce un nome univoco aggiungendo (2), (3), ecc. se il nome esiste già."""
+        characters_dir = self.character_manager.characters_dir
+        if not os.path.exists(os.path.join(characters_dir, base_name)):
+            return base_name
+        counter = 2
+        new_name = f"{base_name} ({counter})"
+        while os.path.exists(os.path.join(characters_dir, new_name)):
+            counter += 1
+            new_name = f"{base_name} ({counter})"
+        return new_name
+
+    def export_character_aura(self) -> None:
+        """Esporta il personaggio selezionato in un pacchetto compatto .aura."""
+        if not self.selected_character:
+            return
+
+        character = self.character_manager.get_character(self.selected_character)
+        if not character:
+            return
+
+        dialog = ExportAuraDialog(character, self.translations, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        options = dialog.get_export_options()
+
+        export_title_text = self.translations.get("export_title", "Esporta Personaggio") if self.translations else "Esporta Personaggio"
+        aura_filter_text = self.translations.get("aura_filter", "Pacchetti Aura (*.aura)") if self.translations else "Pacchetti Aura (*.aura)"
+        default_filename = f"{character.name}.aura"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            export_title_text,
+            default_filename,
+            aura_filter_text,
+        )
+
+        if not file_path:
+            return
+
+        if not file_path.lower().endswith(".aura"):
+            file_path += ".aura"
+
+        anim_path = character.get_animation_path()
+        if not os.path.exists(anim_path):
+            QMessageBox.warning(
+                self,
+                export_title_text,
+                self.translations.get("dialog_no_animation", "Nessun file di animazione trovato per questo personaggio.") if self.translations else "Nessun file di animazione trovato per questo personaggio.",
+            )
+            return
+
+        temp_dir = tempfile.mkdtemp(prefix="aura_export_")
+        try:
+            # 1. Genera thumbnail 150x150
+            thumb_path = os.path.join(temp_dir, "thumbnail.png")
+            thumb_pixmap = load_thumbnail(anim_path, 150, 150, 10)
+            if thumb_pixmap and not thumb_pixmap.isNull():
+                thumb_pixmap.save(thumb_path, "PNG")
+            else:
+                placeholder = draw_placeholder_icon(150, 150, 0.3)
+                placeholder.save(thumb_path, "PNG")
+
+            # 2. Prepara manifest.json
+            anim_filename = os.path.basename(anim_path)
+            anim_ext = os.path.splitext(anim_filename)[1].lstrip(".").lower()
+
+            has_audio = options["include_audio"] and character.has_audio()
+            audio_path = character.get_audio_path() if has_audio else None
+            audio_filename = os.path.basename(audio_path) if (has_audio and audio_path) else None
+
+            manifest = {
+                "format_version": 1,
+                "name": character.name,
+                "aura_app_version": APP_VERSION,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "author_note": options["author_note"],
+                "animation": {
+                    "filename": anim_filename,
+                    "type": anim_ext,
+                },
+                "audio": {
+                    "included": bool(has_audio),
+                    "filename": audio_filename,
+                },
+                "thumbnail": {
+                    "filename": "thumbnail.png",
+                },
+                "config": {},
+            }
+
+            if options["include_behavior"]:
+                manifest["config"]["behavior"] = character.behavior
+            if options["include_fps"] and character.fps is not None:
+                manifest["config"]["fps"] = character.fps
+            if options["include_scale"] and character.scale is not None:
+                manifest["config"]["scale"] = character.scale
+            if options["include_volume"]:
+                manifest["config"]["volume"] = character.volume
+            if options["include_locked"]:
+                manifest["config"]["locked"] = character.locked
+
+            manifest_path = os.path.join(temp_dir, "manifest.json")
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+            # 3. Costruisci il file ZIP (.aura)
+            with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(anim_path, anim_filename)
+                if has_audio and audio_path and os.path.exists(audio_path):
+                    zf.write(audio_path, audio_filename)
+                if os.path.exists(thumb_path):
+                    zf.write(thumb_path, "thumbnail.png")
+                zf.write(manifest_path, "manifest.json")
+
+            success_text = self.translations.get("export_success", "Personaggio esportato con successo!") if self.translations else "Personaggio esportato con successo!"
+            QMessageBox.information(self, export_title_text, f"{success_text}\n\n{file_path}")
+
+        except Exception as e:
+            failed_text = self.translations.get("export_failed", "Esportazione non riuscita") if self.translations else "Esportazione non riuscita"
+            QMessageBox.critical(self, failed_text, f"{failed_text}:\n{e}")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def import_character_aura(self) -> None:
+        """Importa un personaggio da un pacchetto .aura."""
+        select_file_text = self.translations.get("import_select_file", "Seleziona file .aura") if self.translations else "Seleziona file .aura"
+        aura_filter_text = self.translations.get("aura_filter", "Pacchetti Aura (*.aura)") if self.translations else "Pacchetti Aura (*.aura)"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            select_file_text,
+            "",
+            aura_filter_text,
+        )
+
+        if not file_path:
+            return
+
+        import_title_text = self.translations.get("import_title", "Importa Personaggio") if self.translations else "Importa Personaggio"
+        temp_dir = tempfile.mkdtemp(prefix="aura_import_")
+
+        try:
+            # 1. Verifica che sia un archivio valido con manifest.json
+            with zipfile.ZipFile(file_path, "r") as zf:
+                namelist = zf.namelist()
+                if "manifest.json" not in namelist:
+                    QMessageBox.warning(
+                        self,
+                        self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido",
+                        self.translations.get("import_invalid_desc", "Il file selezionato non è un pacchetto .aura valido.") if self.translations else "Il file selezionato non è un pacchetto .aura valido.",
+                    )
+                    return
+                zf.extractall(temp_dir)
+
+            manifest_path = os.path.join(temp_dir, "manifest.json")
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+
+            # 2. Carica anteprima e percorso animazione
+            thumb_name = manifest.get("thumbnail", {}).get("filename", "thumbnail.png")
+            thumb_path = os.path.join(temp_dir, thumb_name)
+            thumb_pixmap = None
+            if os.path.exists(thumb_path):
+                thumb_pixmap = QPixmap(thumb_path)
+                if not thumb_pixmap.isNull():
+                    thumb_pixmap = thumb_pixmap.scaled(76, 76, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+            anim_filename = manifest.get("animation", {}).get("filename", "")
+            anim_temp_path = os.path.join(temp_dir, anim_filename) if anim_filename else None
+
+            if (not thumb_pixmap or thumb_pixmap.isNull()) and anim_temp_path and os.path.exists(anim_temp_path):
+                thumb_pixmap = load_thumbnail(anim_temp_path, 76, 76, 10)
+
+            # 3. Mostra dialog di importazione personalizzabile
+            dialog = ImportAuraDialog(manifest, thumb_pixmap, anim_temp_path, self.translations, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            options = dialog.get_import_options()
+            target_name = options["name"]
+            if not target_name:
+                target_name = manifest.get("name", "Unnamed")
+
+            characters_dir = self.character_manager.characters_dir
+            character_path = os.path.join(characters_dir, target_name)
+
+            # 4. Gestione conflitti di nome
+            if os.path.exists(character_path):
+                msg_box = QMessageBox(self)
+                conflict_title = self.translations.get("import_conflict_title", "Nome già esistente") if self.translations else "Nome già esistente"
+                msg_box.setWindowTitle(conflict_title)
+
+                conflict_template = self.translations.get("import_conflict_msg", "Esiste già un personaggio con il nome \"{name}\".\n\nVuoi sovrascrivere il personaggio esistente o rinominare?") if self.translations else "Esiste già un personaggio con il nome \"{name}\"."
+                msg_box.setText(conflict_template.format(name=target_name))
+
+                overwrite_text = self.translations.get("import_overwrite", "Sovrascrivi") if self.translations else "Sovrascrivi"
+                btn_overwrite = msg_box.addButton(overwrite_text, QMessageBox.ButtonRole.DestructiveRole)
+
+                suggested_name = self._get_unique_character_name(target_name)
+                rename_template = self.translations.get("import_rename", "Rinomina in \"{name}\"") if self.translations else "Rinomina in \"{name}\""
+                btn_rename = msg_box.addButton(rename_template.format(name=suggested_name), QMessageBox.ButtonRole.ActionRole)
+
+                btn_cancel = msg_box.addButton(QMessageBox.StandardButton.Cancel)
+                msg_box.setDefaultButton(btn_rename)
+
+                msg_box.exec()
+                clicked = msg_box.clickedButton()
+
+                if clicked == btn_overwrite:
+                    if target_name in self.active_characters:
+                        self.character_deactivated.emit(target_name)
+                        self.active_characters.discard(target_name)
+                    shutil.rmtree(character_path, ignore_errors=True)
+                elif clicked == btn_rename:
+                    target_name = suggested_name
+                    character_path = os.path.join(characters_dir, target_name)
+                else:
+                    return
+
+            # 5. Crea cartella e copia file
+            os.makedirs(character_path, exist_ok=True)
+            if anim_temp_path and os.path.exists(anim_temp_path):
+                shutil.copy2(anim_temp_path, os.path.join(character_path, anim_filename))
+
+            audio_info = manifest.get("audio", {})
+            audio_filename = audio_info.get("filename")
+            dest_audio_file = None
+            if audio_info.get("included") and audio_filename:
+                audio_temp_path = os.path.join(temp_dir, audio_filename)
+                if os.path.exists(audio_temp_path):
+                    shutil.copy2(audio_temp_path, os.path.join(character_path, audio_filename))
+                    dest_audio_file = audio_filename
+
+            # 6. Genera config.json
+            cfg_data = manifest.get("config", {})
+            config = {
+                "name": target_name,
+                "animation_file": anim_filename,
+                "audio_file": dest_audio_file,
+                "behavior": cfg_data.get("behavior", "static") if options["apply_behavior"] else "static",
+                "width": 200,
+                "height": 200,
+                "draggable": True,
+                "speed": 1.0,
+                "volume": cfg_data.get("volume", 0.5) if options["apply_volume"] else 0.5,
+                "fps": cfg_data.get("fps", 30) if options["apply_fps"] else 30,
+                "scale": cfg_data.get("scale", 100) if options["apply_scale"] else 100,
+                "locked": cfg_data.get("locked", False) if options["apply_locked"] else False,
+            }
+
+            atomic_write_json(os.path.join(character_path, "config.json"), config)
+
+            # 7. Ricarica libreria e seleziona il nuovo personaggio
+            self.load_characters()
+            self.update_counters()
+            if target_name in self.character_cards:
+                self.on_character_selected(target_name)
+
+            success_text = self.translations.get("import_success", "Personaggio importato con successo!") if self.translations else "Personaggio importato con successo!"
+            QMessageBox.information(self, import_title_text, f"{success_text}\n\n\"{target_name}\"")
+
+        except Exception as e:
+            failed_text = self.translations.get("import_failed", "Importazione .aura non riuscita") if self.translations else "Importazione .aura non riuscita"
+            QMessageBox.critical(self, failed_text, f"{failed_text}:\n{e}")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
     # ----------------------------------------------------------- Stato/config
     def update_active_characters(self, active_names: list) -> None:
         self.active_characters = set(active_names)
@@ -2793,7 +3849,9 @@ class LauncherWindow(QMainWindow):
         self.put_button.setEnabled(not is_active)
         self.take_button.setEnabled(is_active)
 
-        self.status_badge.setText("ATTIVO" if is_active else "PRONTO")
+        badge_active = self.translations.get("badge_active", "ATTIVO") if self.translations else "ATTIVO"
+        badge_ready = self.translations.get("badge_ready", "PRONTO") if self.translations else "PRONTO"
+        self.status_badge.setText(badge_active if is_active else badge_ready)
         self.status_badge.setProperty(
             "status", "active" if is_active else "inactive"
         )
@@ -2807,11 +3865,87 @@ class LauncherWindow(QMainWindow):
 
         self.total_stat_value.setText(str(total))
         self.active_stat_value.setText(str(active))
+        active_single = self.translations.get("stats_active_single", "1 personaggio attivo") if self.translations else "1 personaggio attivo"
+        active_multi = self.translations.get("stats_active_multi", "{active} personaggi attivi") if self.translations else "{active} personaggi attivi"
         self.active_counter.setText(
-            "1 personaggio attivo"
-            if active == 1
-            else f"{active} personaggi attivi"
+            active_single if active == 1 else active_multi.format(active=active)
         )
+
+    def _populate_screen_combo(self) -> None:
+        """Popola la tendina schermi rilevando i monitor collegati (stile Wallpaper Engine)."""
+        if not hasattr(self, "screen_combo") or not hasattr(self, "screen_container"):
+            return
+
+        screens = QGuiApplication.screens()
+        # Se c'è solo 1 monitor, nascondi completamente il controllo per mantenere pulito il layout
+        if len(screens) <= 1:
+            self.screen_container.setVisible(False)
+            return
+
+        self.screen_container.setVisible(True)
+        self.screen_combo.blockSignals(True)
+        self.screen_combo.clear()
+
+        # Opzione automatica / ricorda posizione
+        auto_text = self.translations.get("screen_auto", "Automatico (Ricorda posizione)") if self.translations else "Automatico (Ricorda posizione)"
+        self.screen_combo.addItem(auto_text, "auto")
+
+        primary_screen = QApplication.primaryScreen()
+        primary_tag_text = self.translations.get("screen_primary", "Principale") if self.translations else "Principale"
+
+        for i, s in enumerate(screens, start=1):
+            s_name = s.name()
+            geom = s.geometry()
+            res_str = f"{geom.width()}x{geom.height()}"
+            is_primary = (s == primary_screen)
+            tag = f" - {primary_tag_text}" if is_primary else ""
+            screen_num_tmpl = self.translations.get("screen_num", "Schermo {i}") if self.translations else "Schermo {i}"
+            screen_num_str = screen_num_tmpl.format(i=i) if "{i}" in screen_num_tmpl else f"Schermo {i}"
+            label = f"{screen_num_str}: {s_name} ({res_str}{tag})"
+            self.screen_combo.addItem(label, s_name)
+
+        self.screen_combo.blockSignals(False)
+
+    def on_screen_changed(self, index: int) -> None:
+        """Gestisce il cambio dello schermo preferito per il personaggio selezionato."""
+        if not self.selected_character or not hasattr(self, "screen_combo"):
+            return
+
+        screen_name = self.screen_combo.currentData()
+        if screen_name is None:
+            return
+
+        character = self.character_manager.get_character(self.selected_character)
+        if character:
+            character.update_config(preferred_screen=screen_name)
+            character.save_config()
+            # Emette solo screen_changed: sposta la finestra in modo fluido senza distruggerla e ricrearla
+            self.character_screen_changed.emit(self.selected_character, screen_name)
+
+    def update_character_screen_ui(self, character_name: str, screen_name: str) -> None:
+        """Sincronizza la selezione dello schermo nel Launcher se modificato altrove (es. dal desktop)."""
+        if self.selected_character == character_name and hasattr(self, "screen_combo"):
+            idx = self.screen_combo.findData(screen_name)
+            if idx >= 0:
+                self.screen_combo.blockSignals(True)
+                self.screen_combo.setCurrentIndex(idx)
+                self.screen_combo.blockSignals(False)
+
+    def _update_behavior_description(self) -> None:
+        """Aggiorna la descrizione contestuale del comportamento selezionato."""
+        if not hasattr(self, "behavior_desc_label") or not hasattr(self, "behavior_combo"):
+            return
+        behavior_type = self.behavior_combo.currentData()
+        desc_key = f"behavior_desc_{behavior_type}"
+        default_descs = {
+            "static": "Il personaggio rimane fermo nel punto in cui lo posizioni.",
+            "free_walk": "Cammina liberamente a sinistra e destra lungo la parte inferiore dello schermo.",
+            "gravity": "Cade verso il fondo dello schermo e rimbalza dolcemente. Puoi afferrarlo e lanciarlo.",
+            "random_edge": "Sbircia ed entra/esce a intervalli regolari dai bordi dello schermo.",
+        }
+        fallback = default_descs.get(behavior_type, "")
+        desc_text = self.translations.get(desc_key, fallback) if self.translations else fallback
+        self.behavior_desc_label.setText(desc_text)
 
     def on_behavior_changed(self, value) -> None:
         if not self.selected_character:
@@ -2822,6 +3956,8 @@ class LauncherWindow(QMainWindow):
         behavior = (
             value if isinstance(value, str) else self.behavior_combo.currentData()
         )
+        self._update_behavior_description()
+
         character = self.character_manager.get_character(self.selected_character)
         if character and behavior:
             character.update_config(behavior=behavior)
@@ -2870,6 +4006,75 @@ class LauncherWindow(QMainWindow):
         # Emetti segnale per applicare lock senza riavviare
         self.character_lock_changed.emit(self.selected_character, character.locked)
 
+    def _on_preview_audio_finished(self) -> None:
+        """Ripristina lo stato del pulsante anteprima al termine della traccia audio."""
+        if hasattr(self, "audio_preview_button"):
+            preview_text = self.translations.get("btn_audio_preview", "Ascolta anteprima") if self.translations else "Ascolta anteprima"
+            self.audio_preview_button.setText(preview_text)
+            self.audio_preview_button.setIcon(make_icon("play", "#DCE4F0", 14))
+
+    def on_audio_preview_clicked(self) -> None:
+        """Avvia o arresta l'anteprima audio del personaggio selezionato."""
+        if not self.selected_character:
+            return
+
+        character = self.character_manager.get_character(self.selected_character)
+        if not character or not character.has_audio():
+            return
+
+        if hasattr(self, "preview_audio_manager") and self.preview_audio_manager.is_playing():
+            self.preview_audio_manager.stop()
+            self._on_preview_audio_finished()
+        else:
+            audio_path = character.get_audio_path()
+            if audio_path and os.path.exists(audio_path):
+                volume = self.volume_slider.value() / 100.0
+                success = self.preview_audio_manager.play_sound(audio_path, volume=volume)
+                if success:
+                    stop_text = self.translations.get("btn_audio_stop", "Ferma anteprima") if self.translations else "Ferma anteprima"
+                    self.audio_preview_button.setText(stop_text)
+                    self.audio_preview_button.setIcon(make_icon("stop", "#DCE4F0", 14))
+
+    def on_audio_remove_clicked(self) -> None:
+        """Rimuove l'audio associato al personaggio selezionato."""
+        if not self.selected_character:
+            return
+
+        character = self.character_manager.get_character(self.selected_character)
+        if not character or not character.has_audio():
+            return
+
+        if hasattr(self, "preview_audio_manager") and self.preview_audio_manager.is_playing():
+            self.preview_audio_manager.stop()
+            self._on_preview_audio_finished()
+
+        character.update_config(audio_file=None)
+        character.save_config()
+
+        no_audio_text = self.translations.get("no_audio", "Nessun audio") if self.translations else "Nessun audio"
+        self.audio_path_label.setText(no_audio_text)
+        self.audio_path_label.setStyleSheet("")
+
+        if hasattr(self, "audio_preview_button"):
+            self.audio_preview_button.setEnabled(False)
+        if hasattr(self, "audio_remove_button"):
+            self.audio_remove_button.setEnabled(False)
+
+        self.character_updated.emit(self.selected_character)
+
+    def on_audio_startup_toggled(self, checked: bool) -> None:
+        """Salva la preferenza di riproduzione audio all'avvio del personaggio."""
+        if not self.selected_character:
+            return
+
+        character = self.character_manager.get_character(self.selected_character)
+        if not character:
+            return
+
+        character.update_config(play_audio_on_startup=checked)
+        character.save_config()
+        self.character_updated.emit(self.selected_character)
+
     def on_audio_browse(self) -> None:
         """Permette all'utente di selezionare un file audio."""
         if not self.selected_character:
@@ -2900,6 +4105,13 @@ class LauncherWindow(QMainWindow):
 
                 self.audio_path_label.setText(audio_filename)
                 self.audio_path_label.setStyleSheet("color: {};".format(StyleManager.COLORS["text"]))
+
+                if hasattr(self, "audio_preview_button"):
+                    self.audio_preview_button.setEnabled(True)
+                if hasattr(self, "audio_remove_button"):
+                    self.audio_remove_button.setEnabled(True)
+
+                self.character_updated.emit(self.selected_character)
             except Exception as e:
                 error_text = self.translations.get("msg_error", "Errore") if self.translations else "Errore"
                 audio_copy_failed_text = self.translations.get("dialog_audio_copy_failed", "Impossibile copiare il file audio") if self.translations else "Impossibile copiare il file audio"
@@ -2917,6 +4129,9 @@ class LauncherWindow(QMainWindow):
         volume = value / 100.0
         character.update_config(volume=volume)
         character.save_config()
+
+        if hasattr(self, "preview_audio_manager"):
+            self.preview_audio_manager.set_volume(volume)
 
     def on_remove_background(self) -> None:
         """Rimuove lo sfondo dall'animazione del personaggio selezionato usando AI."""
@@ -2960,35 +4175,15 @@ class LauncherWindow(QMainWindow):
 
         # Disabilita pulsante durante elaborazione
         self.remove_bg_button.setEnabled(False)
-        self.remove_bg_button.setText("Elaborazione in corso...")
-
-        # Esegui rimozione sfondo in un thread separato
-        class BackgroundRemovalThread(QThread):
-            finished = pyqtSignal(bool, str, str)
-
-            def __init__(self, input_path, output_path, backup_path):
-                super().__init__()
-                self.input_path = input_path
-                self.output_path = output_path
-                self.backup_path = backup_path
-
-            def run(self):
-                try:
-                    # Import locale per evitare caricamento lento all'avvio
-                    from src.background_remover import BackgroundRemover
-                    # Rimuovi sfondo
-                    success = BackgroundRemover.remove_background(self.input_path, self.output_path)
-                    self.finished.emit(success, self.output_path, self.backup_path)
-                except Exception as e:
-                    # Cattura qualsiasi eccezione per evitare crash dell'app
-                    print(f"Errore durante rimozione sfondo: {e}")
-                    self.finished.emit(False, self.output_path, self.backup_path)
+        processing_text = self.translations.get("btn_processing", "Elaborazione in corso...") if self.translations else "Elaborazione in corso..."
+        self.remove_bg_button.setText(processing_text)
 
         # Salva riferimento al thread per gestirlo correttamente
         if not hasattr(self, '_bg_removal_thread'):
             self._bg_removal_thread = None
 
-        self._bg_removal_thread = BackgroundRemovalThread(animation_path, output_path, backup_path)
+        # Esegui rimozione sfondo in un thread separato
+        self._bg_removal_thread = BackgroundRemovalThread(animation_path, output_path, backup_path, self)
         self._bg_removal_thread.finished.connect(lambda success, path, backup: self._on_background_removal_finished(success, path, backup, character))
         self._bg_removal_thread.start()
 
@@ -3125,6 +4320,11 @@ class LauncherWindow(QMainWindow):
         # Ripristina l'animazione di anteprima se presente
         if self.details_movie and self.details_movie.isValid() and self.details_movie.state() != QMovie.MovieState.Running:
             self.details_movie.start()
+        # Ripristina l'animazione della card selezionata se presente
+        if hasattr(self, "character_cards") and self.selected_character in self.character_cards:
+            card = self.character_cards[self.selected_character]
+            if card.movie and card.movie.isValid() and card.movie.state() != QMovie.MovieState.Running:
+                card.movie.start()
 
     def closeEvent(self, event) -> None:
         self.on_close(event)
@@ -3135,11 +4335,19 @@ class LauncherWindow(QMainWindow):
         # Leggi il comportamento alla chiusura
         close_behavior = self.config_manager.get_global_setting("close_behavior", "minimize_to_tray")
 
+        if hasattr(self, "preview_audio_manager") and self.preview_audio_manager.is_playing():
+            self.preview_audio_manager.stop()
+            self._on_preview_audio_finished()
+
         if close_behavior == "exit":
             # Chiudi l'applicazione
             self.quit_requested.emit()
         else:
-            # Minimizza in tray e metti in pausa l'anteprima per azzerare il consumo CPU
+            # Minimizza in tray e metti in pausa l'anteprima e tutti i movie delle card per azzerare il consumo CPU
             if self.details_movie and self.details_movie.state() == QMovie.MovieState.Running:
                 self.details_movie.stop()
+            if hasattr(self, "character_cards"):
+                for card in self.character_cards.values():
+                    if card.movie and card.movie.state() == QMovie.MovieState.Running:
+                        card.movie.stop()
             self.hide()

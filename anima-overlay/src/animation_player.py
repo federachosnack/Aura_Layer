@@ -20,15 +20,18 @@ class AnimationPlayer(QLabel):
         self.looping = True
         
     def load_animation(self, path: str):
-        """Carica un'animazione da file."""
+        """Carica un'animazione da file arrestando prima eventuali playback attivi."""
         if not os.path.exists(path):
             raise FileNotFoundError(f"File non trovato: {path}")
-            
+
+        # Ferma il timer per evitare accessi concorrenti a frames durante il caricamento
+        self.stop_animation()
+
         self.animation_path = path
         self.frames = []
         self.durations = []
         self.current_frame = 0
-        
+
         try:
             with Image.open(path) as img:
                 for frame in ImageSequence.Iterator(img):
@@ -38,55 +41,65 @@ class AnimationPlayer(QLabel):
                     qimage = QImage(data, frame.width, frame.height, QImage.Format.Format_RGBA8888)
                     pixmap = QPixmap.fromImage(qimage)
                     self.frames.append(pixmap)
-                    
-                    # Ottieni durata del frame (default 100ms se non specificato)
-                    duration = frame.info.get("duration", 100)
+
+                    # Ottieni durata del frame con fallback sicuro (minimo 10ms per evitare 100% CPU lockup)
+                    raw_duration = frame.info.get("duration", 100)
+                    duration = max(10, int(raw_duration)) if raw_duration else 100
                     self.durations.append(duration)
-                    
+
         except Exception as e:
             raise RuntimeError(f"Errore nel caricamento dell'animazione: {e}")
-            
+
         if self.frames:
             self.setPixmap(self.frames[0])
             self.setScaledContents(True)
-            
+
     def start_animation(self):
-        """Avvia il playback dell'animazione."""
+        """Avvia il playback dell'animazione con intervallo sicuro."""
         if self.frames and not self.timer.isActive():
             if self.fps and self.fps > 0:
-                interval = max(1, int(1000 / self.fps))
+                interval = max(10, int(1000 / self.fps))
             elif self.durations:
-                interval = self.durations[0]
+                interval = max(10, self.durations[0])
             else:
                 interval = 100
             self.timer.start(interval)
-            
+
     def stop_animation(self):
         """Ferma il playback dell'animazione."""
         self.timer.stop()
-        
+
     def next_frame(self):
-        """Passa al frame successivo."""
+        """Passa al frame successivo proteggendo da divisioni per zero e intervalli a 0ms."""
         if not self.frames:
+            return
+
+        # Gestione loop
+        if not self.looping and self.current_frame >= len(self.frames) - 1:
+            self.stop_animation()
             return
 
         self.current_frame = (self.current_frame + 1) % len(self.frames)
         self.setPixmap(self.frames[self.current_frame])
 
-        # Aggiorna timer con durata del prossimo frame
-        if self.fps is not None:
-            # Usa FPS personalizzato
-            interval = int(1000 / self.fps)
+        # Aggiorna timer con durata del prossimo frame (minimo 10ms)
+        if self.fps is not None and self.fps > 0:
+            interval = max(10, int(1000 / self.fps))
+        elif self.durations and self.current_frame < len(self.durations):
+            interval = max(10, self.durations[self.current_frame])
         else:
-            # Usa durata nativa del frame
-            interval = self.durations[self.current_frame]
+            interval = 100
+
         self.timer.setInterval(interval)
 
     def set_fps(self, fps: int):
         """Imposta il FPS personalizzato (None per durata nativa) e aggiorna immediatamente il timer."""
         self.fps = fps
-        if self.timer.isActive() and fps and fps > 0:
-            self.timer.setInterval(max(1, int(1000 / fps)))
+        if self.timer.isActive():
+            if fps and fps > 0:
+                self.timer.setInterval(max(10, int(1000 / fps)))
+            elif self.durations and self.current_frame < len(self.durations):
+                self.timer.setInterval(max(10, self.durations[self.current_frame]))
         
     def set_size(self, width: int, height: int):
         """Imposta le dimensioni del player."""
