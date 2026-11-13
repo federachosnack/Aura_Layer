@@ -44,21 +44,65 @@ class Character:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
 
-        # Estrai i campi dalla configurazione
-        self.name = self.config.get("name", "Unnamed Character")
-        self.animation_file = self.config.get("animation_file", "")
-        self.audio_file = self.config.get("audio_file")
-        self.behavior = self.config.get("behavior", "static")
-        self.width = self.config.get("width", 200)
-        self.height = self.config.get("height", 200)
-        self.draggable = self.config.get("draggable", True)
-        self.speed = self.config.get("speed", 1.0)
-        self.volume = self.config.get("volume", 0.5)
-        self.fps = self.config.get("fps", None)  # FPS personalizzato o None per nativo
-        self.scale = self.config.get("scale", None)  # Scaling in percentuale (25-200)
-        self.locked = self.config.get("locked", False)  # Click-through mode
-        self.preferred_screen = self.config.get("preferred_screen", "auto")
-        self.play_audio_on_startup = self.config.get("play_audio_on_startup", True)
+        # Estrai i campi dalla configurazione con type-coercion e clamping di sicurezza
+        self.name = str(self.config.get("name", "Unnamed Character")).strip() or "Unnamed Character"
+        self.animation_file = str(self.config.get("animation_file", ""))
+        raw_audio = self.config.get("audio_file")
+        self.audio_file = str(raw_audio) if raw_audio else None
+
+        valid_behaviors = {"static", "free_walk", "random_edge", "gravity"}
+        raw_behavior = self.config.get("behavior", "static")
+        self.behavior = raw_behavior if raw_behavior in valid_behaviors else "static"
+
+        try:
+            self.width = max(10, min(4000, int(self.config.get("width", 200))))
+        except (ValueError, TypeError):
+            self.width = 200
+
+        try:
+            self.height = max(10, min(4000, int(self.config.get("height", 200))))
+        except (ValueError, TypeError):
+            self.height = 200
+
+        try:
+            self.draggable = bool(self.config.get("draggable", True))
+        except Exception:
+            self.draggable = True
+
+        try:
+            self.speed = max(0.1, min(10.0, float(self.config.get("speed", 1.0))))
+        except (ValueError, TypeError):
+            self.speed = 1.0
+
+        try:
+            self.volume = max(0.0, min(1.0, float(self.config.get("volume", 0.5))))
+        except (ValueError, TypeError):
+            self.volume = 0.5
+
+        raw_fps = self.config.get("fps", None)
+        if raw_fps is not None:
+            try:
+                self.fps = max(1, min(60, int(raw_fps)))
+            except (ValueError, TypeError):
+                self.fps = None
+        else:
+            self.fps = None
+
+        raw_scale = self.config.get("scale", None)
+        if raw_scale is not None:
+            try:
+                self.scale = max(25, min(200, int(raw_scale)))
+            except (ValueError, TypeError):
+                self.scale = None
+        else:
+            self.scale = None
+
+        raw_locked = self.config.get("locked", False)
+        self.locked = raw_locked in (True, 1, "true", "True")
+
+        self.preferred_screen = str(self.config.get("preferred_screen", "auto"))
+        raw_startup_audio = self.config.get("play_audio_on_startup", True)
+        self.play_audio_on_startup = raw_startup_audio in (True, 1, "true", "True")
         
     def get_animation_path(self) -> str:
         """Restituisce il percorso completo del file animazione."""
@@ -71,8 +115,34 @@ class Character:
         return None
 
     def update_config(self, **kwargs):
-        """Aggiorna i campi della configurazione in memoria."""
+        """Aggiorna i campi della configurazione in memoria validando e sanitizzando i tipi."""
         for key, value in kwargs.items():
+            if key == "scale" and value is not None:
+                try:
+                    value = max(25, min(200, int(value)))
+                except (ValueError, TypeError):
+                    value = None
+            elif key == "fps" and value is not None:
+                try:
+                    value = max(1, min(60, int(value)))
+                except (ValueError, TypeError):
+                    value = None
+            elif key == "volume" and value is not None:
+                try:
+                    value = max(0.0, min(1.0, float(value)))
+                except (ValueError, TypeError):
+                    value = 0.5
+            elif key == "behavior" and value is not None:
+                valid_behaviors = {"static", "free_walk", "random_edge", "gravity"}
+                value = value if value in valid_behaviors else "static"
+            elif key == "locked":
+                value = value in (True, 1, "true", "True")
+            elif key in ("width", "height") and value is not None:
+                try:
+                    value = max(10, min(4000, int(value)))
+                except (ValueError, TypeError):
+                    value = 200
+
             self.config[key] = value
             # Aggiorna anche l'attributo corrispondente se esiste
             if hasattr(self, key):

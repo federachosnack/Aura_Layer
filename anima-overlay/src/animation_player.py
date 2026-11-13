@@ -33,14 +33,18 @@ class AnimationPlayer(QLabel):
         self.current_frame = 0
 
         MAX_FRAME_DIM = 1000
+        MAX_FRAMES = 400
         try:
             with Image.open(path) as img:
-                n_frames = getattr(img, "n_frames", 1)
-                # Budget dinamico memoria: ~256 MB per animazione (4 byte/pixel RGBA) per prevenire OOM su APNG/GIF con centinaia di frame
-                side = int((256 * 1024 * 1024 / (max(1, n_frames) * 4)) ** 0.5)
+                raw_n = getattr(img, "n_frames", 1)
+                n_frames = min(MAX_FRAMES, max(1, raw_n))
+                # Budget dinamico memoria: ~128 MB per animazione (4 byte/pixel RGBA) per prevenire OOM anche con molteplici personaggi attivi
+                side = int((128 * 1024 * 1024 / (n_frames * 4)) ** 0.5)
                 max_dim = max(64, min(MAX_FRAME_DIM, side))
 
-                for frame in ImageSequence.Iterator(img):
+                for idx, frame in enumerate(ImageSequence.Iterator(img)):
+                    if idx >= MAX_FRAMES:
+                        break
                     # Converti frame in RGBA disaccoppiando la copia in memoria prima di ridimensionare
                     frame = frame.convert("RGBA")
 

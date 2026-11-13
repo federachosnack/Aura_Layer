@@ -19,6 +19,8 @@ build/
 dist/
 dist_temp/
 *.spec
+*.zip
+*.rar
 
 # Executables
 *.exe

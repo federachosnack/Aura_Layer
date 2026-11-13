@@ -31,56 +31,60 @@ class ActiveCharacter:
         self.behavior = None
         self.audio_manager = AudioManager()
 
-        # Collega il menu contestuale con tasto destro del mouse sul desktop
-        self.window.right_clicked.connect(self.show_context_menu)
-
-        # Collega visibilità della finestra all'animazione per azzerare cicli CPU quando nascosta
-        self.window.window_hidden.connect(self.player.stop_animation)
-        self.window.window_shown.connect(self.player.start_animation)
-
-        # Calculate scaling once / Calcola scaling una volta sola
-        scale_factor = (character.scale or 100) / 100
-        scaled_width = int(character.width * scale_factor)
-        scaled_height = int(character.height * scale_factor)
-
-        # Load animation / Carica animazione
         try:
-            self.player.load_animation(character.get_animation_path())
-            self.player.set_size(scaled_width, scaled_height)
-            # Imposta FPS: se character.fps è specificato usa quello; altrimenti usa None per rispettare le durate native dei frame GIF
-            fps_to_use = character.fps
-            if self.config_manager:
-                global_fps_limit = self.config_manager.get_global_setting("global_fps_limit", 0)
-                if global_fps_limit > 0:
-                    fps_to_use = min(fps_to_use, global_fps_limit) if fps_to_use is not None else global_fps_limit
-            self.player.set_fps(fps_to_use)
-            self.player.start_animation()
-            self.player.show()
-        except Exception as e:
-            print(f"Error loading animation for {character.name}: {e}")
+            # Collega il menu contestuale con tasto destro del mouse sul desktop
+            self.window.right_clicked.connect(self.show_context_menu)
 
-        # Configure window with scaling / Configura finestra con scaling
-        self.window.resize(scaled_width, scaled_height)
+            # Collega visibilità della finestra all'animazione per azzerare cicli CPU quando nascosta
+            self.window.window_hidden.connect(self.player.stop_animation)
+            self.window.window_shown.connect(self.player.start_animation)
 
-        # Apply click-through mode / Applica click-through mode
-        self.window.set_click_through(character.locked)
+            # Calculate scaling once / Calcola scaling una volta sola
+            scale_factor = (character.scale or 100) / 100
+            scaled_width = int(character.width * scale_factor)
+            scaled_height = int(character.height * scale_factor)
 
-        # Create appropriate behavior with scaled dimensions / Crea comportamento appropriato con dimensioni scalate
-        self.setup_behavior(scaled_width, scaled_height)
+            # Load animation / Carica animazione
+            try:
+                self.player.load_animation(character.get_animation_path())
+                self.player.set_size(scaled_width, scaled_height)
+                # Imposta FPS: se character.fps è specificato usa quello; altrimenti usa None per rispettare le durate native dei frame GIF
+                fps_to_use = character.fps
+                if self.config_manager:
+                    global_fps_limit = self.config_manager.get_global_setting("global_fps_limit", 0)
+                    if global_fps_limit > 0:
+                        fps_to_use = min(fps_to_use, global_fps_limit) if fps_to_use is not None else global_fps_limit
+                self.player.set_fps(fps_to_use)
+                self.player.start_animation()
+                self.player.show()
+            except Exception as e:
+                print(f"Error loading animation for {character.name}: {e}")
 
-        # Play audio if present / Riproduci audio se presente e abilitato
-        if character.has_audio() and character.config.get("play_audio_on_startup", True):
-            self.audio_manager.play_sound(character.get_audio_path(), character.volume)
+            # Configure window with scaling / Configura finestra con scaling
+            self.window.resize(scaled_width, scaled_height)
 
-        # Applica schermo preferito se assegnato (stile Wallpaper Engine)
-        pref_screen_name = character.config.get("preferred_screen")
-        if pref_screen_name and pref_screen_name != "auto":
-            for s in QGuiApplication.screens():
-                if s.name() == pref_screen_name:
-                    curr_s = QGuiApplication.screenAt(self.window.geometry().center())
-                    if curr_s != s:
-                        self.move_to_screen(s)
-                    break
+            # Apply click-through mode / Applica click-through mode
+            self.window.set_click_through(character.locked)
+
+            # Create appropriate behavior with scaled dimensions / Crea comportamento appropriato con dimensioni scalate
+            self.setup_behavior(scaled_width, scaled_height)
+
+            # Play audio if present / Riproduci audio se presente e abilitato
+            if character.has_audio() and character.config.get("play_audio_on_startup", True):
+                self.audio_manager.play_sound(character.get_audio_path(), character.volume)
+
+            # Applica schermo preferito se assegnato (stile Wallpaper Engine)
+            pref_screen_name = character.config.get("preferred_screen")
+            if pref_screen_name and pref_screen_name != "auto":
+                for s in QGuiApplication.screens():
+                    if s.name() == pref_screen_name:
+                        curr_s = QGuiApplication.screenAt(self.window.geometry().center())
+                        if curr_s != s:
+                            self.move_to_screen(s)
+                        break
+        except Exception:
+            self.cleanup()
+            raise
 
     def _teardown_behavior(self):
         """Pulisce e distrugge il comportamento attivo disconnettendo i segnali dalla finestra."""

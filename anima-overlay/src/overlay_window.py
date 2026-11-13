@@ -81,6 +81,9 @@ class OverlayWindow(QWidget):
 
         # Imposta hook per reagire immediatamente ai cambiamenti di focus
         self.setup_foreground_hook()
+
+        # Connessione infallibile: rimuove l'hook WinEvent alla distruzione dell'oggetto Qt
+        self.destroyed.connect(self.cleanup_hook)
         
     def setup_window(self):
         """Configura la finestra come overlay trasparente."""
@@ -130,9 +133,12 @@ class OverlayWindow(QWidget):
             print("Warning: Failed to set WinEventHook, using timer only")
 
     def cleanup_hook(self):
-        """Pulisce l'hook quando la finestra viene distrutta."""
-        if self._event_hook:
-            _user32.UnhookWinEvent(self._event_hook)
+        """Pulisce l'hook quando la finestra viene distrutta o chiusa."""
+        if hasattr(self, '_event_hook') and self._event_hook:
+            try:
+                _user32.UnhookWinEvent(self._event_hook)
+            except Exception:
+                pass
             self._event_hook = None
         self._win_event_callback = None
 

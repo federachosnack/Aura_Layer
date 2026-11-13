@@ -7,6 +7,7 @@ import re
 import zipfile
 import traceback
 import time
+import atexit
 import faulthandler
 from pathlib import Path
 from datetime import datetime
@@ -160,6 +161,24 @@ def install_global_exception_handler() -> None:
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
     sys.excepthook = excepthook
+
+
+def _flush_repeated_crash_errors() -> None:
+    """Scrive eventuali errori ripetuti pendenti prima della chiusura definitiva del processo."""
+    global _repeated_error_count, _last_error_signature
+    if _repeated_error_count > 0:
+        try:
+            log_dir = get_app_data_dir()
+            crash_file = os.path.join(log_dir, "crash.log")
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(crash_file, "a", encoding="utf-8") as f:
+                f.write(f"[{now_str}] (Errore finale {_last_error_signature} ripetuto {_repeated_error_count} volte prima dell'uscita)\n")
+            _repeated_error_count = 0
+        except Exception:
+            pass
+
+
+atexit.register(_flush_repeated_crash_errors)
 
 
 def get_app_data_dir() -> str:
