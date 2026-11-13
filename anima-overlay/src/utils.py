@@ -3,8 +3,163 @@ import shutil
 import ctypes
 import sys
 import json
+import re
+import zipfile
+import traceback
+import time
+import faulthandler
+from pathlib import Path
+from datetime import datetime
 from ctypes import wintypes
-from typing import Optional
+from typing import Optional, Tuple
+
+
+def sanitize_filename(name: str, default: str = "character") -> str:
+    """
+    Sanitizza un nome file o cartella per Windows:
+    - Prende solo il basename (elimina ../../ e percorsi assoluti).
+    - Rimuove caratteri vietati nei filesystem Windows (\\ / : * ? " < > |).
+    - Rimuove caratteri di controllo non stampabili.
+    - Evita nomi di periferica riservati di Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
+    """
+    if not name:
+        return default
+    base = os.path.basename(name).strip()
+    cleaned = re.sub(r'[\\/*?:"<>|\x00-\x1f]', '', base).strip()
+    cleaned = cleaned.rstrip('. ')
+    reserved = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
+    stem, _ = os.path.splitext(cleaned)
+    if cleaned.lower() in reserved or stem.lower() in reserved or not cleaned:
+        return default
+    return cleaned
+
+
+def validate_aura_zip(zip_file: zipfile.ZipFile, max_files: int = 100, max_uncompressed_bytes: int = 250 * 1024 * 1024) -> Tuple[bool, str]:
+    """
+    Verifica che il file ZIP di un pacchetto .aura sia sicuro:
+    - Non superi il numero massimo di file consentito.
+    - Non superi la dimensione decompressa massima (protezione zip-bomb).
+    - Nessun percorso contenga directory traversal (.. come componente di cartella o path assoluto).
+    Restituisce (True, "") oppure (False, codice_errore).
+    """
+    total_size = 0
+    infolist = zip_file.infolist()
+    if len(infolist) > max_files:
+        return False, "ERR_TOO_MANY_FILES"
+
+    for info in infolist:
+        total_size += info.file_size
+        if total_size > max_uncompressed_bytes:
+            return False, "ERR_UNCOMPRESSED_SIZE"
+        
+        # Verifica segmenti di percorso individuali per bloccare '..' senza bloccare file come '..foo.png'
+        # e blocca percorsi con drive (C:) o root (/ o \) su Windows
+        p = Path(info.filename)
+        if p.drive or p.root or p.is_absolute() or any(part == ".." for part in p.parts):
+            return False, "ERR_UNSAFE_PATH"
+
+    return True, ""
+
+
+_last_crash_dialog_time = 0.0
+_last_error_signature = ""
+_repeated_error_count = 0
+_last_log_write_time = 0.0
+
+
+def install_global_exception_handler() -> None:
+    """
+    Installa un gestore globale di eccezioni (sys.excepthook) e abilita faulthandler
+    per registrare crash nativi e non gestiti in %APPDATA%/AuraLayer/crash.log.
+    """
+    log_dir = get_app_data_dir()
+    crash_file = os.path.join(log_dir, "crash.log")
+    native_crash_file = os.path.join(log_dir, "native_crash.log")
+
+    # Rotazione iniziale del crash log prima di agganciare qualsiasi descrittore di file
+    try:
+        if os.path.exists(crash_file) and os.path.getsize(crash_file) > 1024 * 1024:
+            old_log = os.path.join(log_dir, "crash.old.log")
+            if os.path.exists(old_log):
+                os.remove(old_log)
+            os.rename(crash_file, old_log)
+    except OSError:
+        pass
+
+    # Abilita faulthandler su un file dedicato per tracciare hard crash C/Win32 di ctypes
+    try:
+        fh_native = open(native_crash_file, "a", encoding="utf-8")
+        faulthandler.enable(file=fh_native)
+    except Exception:
+        pass
+
+    def excepthook(exc_type, exc_value, exc_traceback):
+        global _last_crash_dialog_time, _last_error_signature, _repeated_error_count, _last_log_write_time
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        last = traceback.extract_tb(exc_traceback)[-1] if exc_traceback else None
+        err_sig = f"{exc_type.__name__}@{last.filename}:{last.lineno}" if last else exc_type.__name__
+        now_mono = time.monotonic()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            # Se è lo stesso identico errore ripetuto rapidamente (finestra scorrevole), raggruppa e deduplica
+            if err_sig == _last_error_signature and (now_mono - _last_log_write_time < 2.0):
+                _repeated_error_count += 1
+                _last_log_write_time = now_mono
+            else:
+                if _repeated_error_count > 0:
+                    with open(crash_file, "a", encoding="utf-8") as f:
+                        f.write(f"[{now_str}] (Errore precedente {_last_error_signature} ripetuto {_repeated_error_count} volte)\n")
+                    _repeated_error_count = 0
+
+                # Rotazione runtime del file crash.log se supera 1 MB
+                try:
+                    if os.path.exists(crash_file) and os.path.getsize(crash_file) > 1024 * 1024:
+                        old_log = os.path.join(log_dir, "crash.old.log")
+                        if os.path.exists(old_log):
+                            os.remove(old_log)
+                        os.rename(crash_file, old_log)
+                except OSError:
+                    pass
+
+                _last_error_signature = err_sig
+                _last_log_write_time = now_mono
+
+                tb_lines = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+                entry = f"\n{'='*70}\n[CRASH REPORT - {now_str}]\n{tb_lines}{'='*70}\n"
+
+                with open(crash_file, "a", encoding="utf-8") as f:
+                    f.write(entry)
+                    f.flush()
+        except Exception:
+            pass
+
+        # Mostra dialog di avviso con rate-limiting (massimo 1 ogni 30 secondi) per evitare cascate di popup
+        try:
+            if "unittest" not in sys.modules and (now_mono - _last_crash_dialog_time > 30.0):
+                _last_crash_dialog_time = now_mono
+                from PyQt6.QtWidgets import QApplication, QMessageBox
+                if QApplication.instance():
+                    try:
+                        from .translations import t
+                        title = t("crash_critical_title", "Aura Layer - Errore Critico")
+                        msg_template = t("crash_critical_msg", "Si è verificato un errore imprevisto.\n\nI dettagli sono stati salvati in:\n{path}")
+                        msg = msg_template.format(path=crash_file)
+                    except Exception:
+                        title = "Aura Layer - Errore Critico"
+                        msg = f"Si è verificato un errore imprevisto.\n\nI dettagli sono stati salvati in:\n{crash_file}"
+
+                    QMessageBox.critical(None, title, msg)
+        except Exception:
+            pass
+
+        if sys.__excepthook__:
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = excepthook
 
 
 def get_app_data_dir() -> str:
@@ -49,9 +204,10 @@ def migrate_from_local_if_needed() -> None:
     """Migra i dati dalla cartella locale a %APPDATA% se necessario."""
     app_data_dir = get_app_data_dir()
 
-    # Percorsi locali (vecchia posizione)
-    local_characters_dir = "characters"
-    local_config_file = "config.json"
+    # Percorsi locali basati sulla directory radice dell'app
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_characters_dir = os.path.join(base_dir, "characters")
+    local_config_file = os.path.join(base_dir, "config.json")
 
     # Percorsi in APPDATA (nuova posizione)
     app_characters_dir = os.path.join(app_data_dir, "characters")

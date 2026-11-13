@@ -85,6 +85,14 @@ class RandomEdgeBehavior(QObject):
         self.hide_timer.stop()
         self.spawn_timer.stop()
 
+    def resume_behavior(self):
+        """Riprende il comportamento dopo una pausa o evento hide/show."""
+        if not self.running:
+            self.running = True
+            if not self.is_dragging:
+                if not self.spawn_timer.isActive() and not self.hide_timer.isActive() and self.slide_anim.state() != QVariantAnimation.State.Running:
+                    self.spawn_timer.start(800)
+
     def set_dragging(self, is_dragging: bool, x: int = 0, y: int = 0):
         """Gestisce il drag dell'utente, sospendendo o riprendendo le animazioni."""
         self.is_dragging = is_dragging
@@ -291,6 +299,13 @@ class FreeWalkBehavior(QObject):
         self.fall_timer.stop()
         self.is_falling = False
 
+    def resume_behavior(self):
+        """Riprende il comportamento senza reimpostare la posizione."""
+        if not self.running:
+            self.running = True
+            if not self.move_timer.isActive() and not self.is_falling:
+                self.move_timer.start(16)
+
     def move_step(self):
         """Esegue un passo del movimento."""
         if not self.running or self.is_dragging or self.is_falling:
@@ -469,6 +484,19 @@ class GravityBehavior(QObject):
         self.running = False
         self._idle_frames = 0
         self.physics_timer.stop()
+
+    def resume_behavior(self):
+        """Riprende la simulazione fisica se il personaggio non è già a riposo sul suolo."""
+        if not self.running:
+            self.running = True
+            screen = get_screen_for_point(int(self.current_x) + self.window_width // 2, int(self.current_y) + self.window_height // 2)
+            if screen:
+                geom = screen.geometry()
+                floor_y = geom.bottom() - self.window_height
+                if self.current_y < floor_y - 2 or abs(self.velocity_x) > 0.1 or abs(self.velocity_y) > 0.1:
+                    self._idle_frames = 0
+                    if not self.physics_timer.isActive():
+                        self.physics_timer.start(16)
 
     def physics_step(self):
         """Esegue un passo della simulazione fisica con standby intelligente a riposo (0% CPU)."""

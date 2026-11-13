@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Optional
 import zipfile
-from .utils import resource_path, atomic_write_json, get_app_data_dir
+from .utils import resource_path, atomic_write_json, get_app_data_dir, sanitize_filename, validate_aura_zip
 
 from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QThread, QPointF
 from PyQt6.QtGui import (
@@ -3705,8 +3705,23 @@ class LauncherWindow(QMainWindow):
         temp_dir = tempfile.mkdtemp(prefix="aura_import_")
 
         try:
-            # 1. Verifica che sia un archivio valido con manifest.json
+            # 1. Verifica che sia un archivio valido con manifest.json e protezione zip-bomb
             with zipfile.ZipFile(file_path, "r") as zf:
+                valid, err_code = validate_aura_zip(zf)
+                if not valid:
+                    err_map = {
+                        "ERR_TOO_MANY_FILES": self.translations.get("import_too_many_files", "L'archivio contiene troppi file (limite superato).") if self.translations else "L'archivio contiene troppi file (limite superato).",
+                        "ERR_UNCOMPRESSED_SIZE": self.translations.get("import_uncompressed_size", "La dimensione dell'archivio decompresso supera il limite consentito.") if self.translations else "La dimensione dell'archivio decompresso supera il limite consentito.",
+                        "ERR_UNSAFE_PATH": self.translations.get("import_unsafe_path", "Percorso non sicuro o non valido trovato nell'archivio.") if self.translations else "Percorso non sicuro o non valido trovato nell'archivio.",
+                    }
+                    err_msg = err_map.get(err_code, err_code)
+                    QMessageBox.warning(
+                        self,
+                        self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido",
+                        err_msg
+                    )
+                    return
+
                 namelist = zf.namelist()
                 if "manifest.json" not in namelist:
                     QMessageBox.warning(
@@ -3721,8 +3736,16 @@ class LauncherWindow(QMainWindow):
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
 
-            # 2. Carica anteprima e percorso animazione
-            thumb_name = manifest.get("thumbnail", {}).get("filename", "thumbnail.png")
+            if not isinstance(manifest, dict) or "name" not in manifest or "animation" not in manifest:
+                QMessageBox.warning(
+                    self,
+                    self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido",
+                    self.translations.get("import_invalid_manifest", "Manifest del pacchetto .aura incompleto o non valido.") if self.translations else "Manifest del pacchetto .aura incompleto o non valido."
+                )
+                return
+
+            # 2. Carica anteprima e percorso animazione (sanitizzati)
+            thumb_name = sanitize_filename(manifest.get("thumbnail", {}).get("filename", "thumbnail.png"), "thumbnail.png")
             thumb_path = os.path.join(temp_dir, thumb_name)
             thumb_pixmap = None
             if os.path.exists(thumb_path):
@@ -3730,8 +3753,15 @@ class LauncherWindow(QMainWindow):
                 if not thumb_pixmap.isNull():
                     thumb_pixmap = thumb_pixmap.scaled(76, 76, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
-            anim_filename = manifest.get("animation", {}).get("filename", "")
+            raw_anim_fn = manifest.get("animation", {}).get("filename", "")
+            anim_filename = sanitize_filename(raw_anim_fn, "animation.gif") if raw_anim_fn else None
             anim_temp_path = os.path.join(temp_dir, anim_filename) if anim_filename else None
+
+            # Verifica subito che l'animazione sia presente prima di procedere
+            if not anim_temp_path or not os.path.exists(anim_temp_path):
+                missing_anim_text = self.translations.get("import_anim_missing", "File di animazione non trovato o mancante nel pacchetto .aura.") if self.translations else "File di animazione non trovato o mancante nel pacchetto .aura."
+                QMessageBox.critical(self, self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido", missing_anim_text)
+                return
 
             if (not thumb_pixmap or thumb_pixmap.isNull()) and anim_temp_path and os.path.exists(anim_temp_path):
                 thumb_pixmap = load_thumbnail(anim_temp_path, 76, 76, 10)
@@ -3742,12 +3772,20 @@ class LauncherWindow(QMainWindow):
                 return
 
             options = dialog.get_import_options()
-            target_name = options["name"]
-            if not target_name:
-                target_name = manifest.get("name", "Unnamed")
+            raw_target_name = options["name"] if options["name"] else manifest.get("name", "Unnamed")
+            target_name = sanitize_filename(raw_target_name, "Unnamed")
 
-            characters_dir = self.character_manager.characters_dir
-            character_path = os.path.join(characters_dir, target_name)
+            characters_dir = os.path.abspath(self.character_manager.characters_dir)
+            character_path = os.path.abspath(os.path.join(characters_dir, target_name))
+
+            # Verifica di sicurezza rigorosa: character_path DEVE essere un figlio diretto di characters_dir
+            if os.path.commonpath([characters_dir, character_path]) != characters_dir or character_path == characters_dir or not target_name:
+                QMessageBox.warning(
+                    self,
+                    self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido",
+                    self.translations.get("import_unsafe_path", "Nome del personaggio non valido o non sicuro.") if self.translations else "Nome del personaggio non valido o non sicuro."
+                )
+                return
 
             # 4. Gestione conflitti di nome
             if os.path.exists(character_path):
@@ -3784,11 +3822,22 @@ class LauncherWindow(QMainWindow):
 
             # 5. Crea cartella e copia file
             os.makedirs(character_path, exist_ok=True)
-            if anim_temp_path and os.path.exists(anim_temp_path):
-                shutil.copy2(anim_temp_path, os.path.join(character_path, anim_filename))
+            dest_anim_path = os.path.join(character_path, anim_filename) if anim_filename else ""
+            if anim_temp_path and os.path.exists(anim_temp_path) and anim_filename:
+                shutil.copy2(anim_temp_path, dest_anim_path)
+
+            if not os.path.exists(dest_anim_path):
+                shutil.rmtree(character_path, ignore_errors=True)
+                QMessageBox.critical(
+                    self,
+                    self.translations.get("import_invalid", "File .aura non valido") if self.translations else "File .aura non valido",
+                    self.translations.get("import_anim_missing", "File di animazione non trovato o mancante nel pacchetto .aura.") if self.translations else "File di animazione non trovato o mancante nel pacchetto .aura."
+                )
+                return
 
             audio_info = manifest.get("audio", {})
-            audio_filename = audio_info.get("filename")
+            raw_audio_name = audio_info.get("filename")
+            audio_filename = sanitize_filename(raw_audio_name, "audio.mp3") if raw_audio_name else None
             dest_audio_file = None
             if audio_info.get("included") and audio_filename:
                 audio_temp_path = os.path.join(temp_dir, audio_filename)
@@ -3796,21 +3845,46 @@ class LauncherWindow(QMainWindow):
                     shutil.copy2(audio_temp_path, os.path.join(character_path, audio_filename))
                     dest_audio_file = audio_filename
 
-            # 6. Genera config.json
+            # 6. Genera config.json con clamping rigoroso dei parametri
             cfg_data = manifest.get("config", {})
+            raw_behavior = cfg_data.get("behavior", "static") if options["apply_behavior"] else "static"
+            valid_behaviors = {"static", "free_walk", "random_edge", "gravity"}
+            safe_behavior = raw_behavior if raw_behavior in valid_behaviors else "static"
+
+            raw_volume = cfg_data.get("volume", 0.5) if options["apply_volume"] else 0.5
+            try:
+                safe_volume = max(0.0, min(1.0, float(raw_volume)))
+            except (ValueError, TypeError):
+                safe_volume = 0.5
+
+            raw_fps = cfg_data.get("fps", 30) if options["apply_fps"] else 30
+            try:
+                safe_fps = max(1, min(60, int(raw_fps))) if raw_fps is not None else None
+            except (ValueError, TypeError):
+                safe_fps = 30
+
+            raw_scale = cfg_data.get("scale", 100) if options["apply_scale"] else 100
+            try:
+                safe_scale = max(25, min(200, int(raw_scale)))
+            except (ValueError, TypeError):
+                safe_scale = 100
+
+            raw_locked = cfg_data.get("locked", False) if options["apply_locked"] else False
+            safe_locked = raw_locked in (True, 1, "true", "True")
+
             config = {
                 "name": target_name,
                 "animation_file": anim_filename,
                 "audio_file": dest_audio_file,
-                "behavior": cfg_data.get("behavior", "static") if options["apply_behavior"] else "static",
+                "behavior": safe_behavior,
                 "width": 200,
                 "height": 200,
                 "draggable": True,
                 "speed": 1.0,
-                "volume": cfg_data.get("volume", 0.5) if options["apply_volume"] else 0.5,
-                "fps": cfg_data.get("fps", 30) if options["apply_fps"] else 30,
-                "scale": cfg_data.get("scale", 100) if options["apply_scale"] else 100,
-                "locked": cfg_data.get("locked", False) if options["apply_locked"] else False,
+                "volume": safe_volume,
+                "fps": safe_fps,
+                "scale": safe_scale,
+                "locked": safe_locked,
             }
 
             atomic_write_json(os.path.join(character_path, "config.json"), config)

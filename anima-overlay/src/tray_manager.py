@@ -40,6 +40,9 @@ class TrayManager(QObject):
         self.create_menu()
         self.tray_icon.setContextMenu(self.menu)
 
+        # Gestisce il click sinistro e doppio click sull'icona della tray per aprire il Launcher
+        self.tray_icon.activated.connect(self._on_tray_activated)
+
         # Force icon display / Forza la visualizzazione dell'icona
         self.tray_icon.show()
 
@@ -48,6 +51,11 @@ class TrayManager(QObject):
             print("WARNING: System tray not available on this system")
         else:
             print("System tray icon created successfully")
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason):
+        """Apre il launcher al click sinistro o doppio click sull'icona della barra di sistema."""
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.open_launcher_signal.emit()
         
     def create_menu(self):
         """Create context menu for tray icon / Crea il menu contestuale della tray icon."""

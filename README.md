@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-Aura%20Layer-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.13-green.svg)
+![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
 Aura Layer is a desktop character overlay application for Windows that lets you place animated characters directly on your desktop.
@@ -85,7 +85,7 @@ The executable will be created in the `dist_temp/` directory.
 2. **Open Launcher**: Click the system tray icon and select "Open Launcher"
 3. **Add Character**: Click "Add Character" and provide:
    - Character name
-   - Animation file (GIF, PNG, or other supported formats)
+   - Animation file (GIF, APNG, WebP, PNG, or other supported formats)
    - Optional audio file
    - Behavior settings
 4. **Launch Character**: Click "Launch" to display the character on your desktop
@@ -187,6 +187,12 @@ See the [LICENSE](LICENSE) file for the complete terms.
 - [x] Further multi-monitor improvements
 - [x] Additional interaction features
 - [x] Performance and stability improvements
+
+## Troubleshooting
+
+If you encounter unexpected behavior or errors:
+- Diagnostics and crash dumps are automatically logged to %APPDATA%\AuraLayer\crash.log.
+- To report an issue, please attach the contents of crash.log when opening an issue on GitHub.
 
 ## Support
 

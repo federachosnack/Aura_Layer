@@ -13,7 +13,7 @@ from src.character import CharacterManager
 from src.tray_manager import TrayManager
 from src.config_manager import ConfigManager
 from src.launcher import LauncherWindow, make_icon
-from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path, is_fullscreen_active
+from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path, is_fullscreen_active, install_global_exception_handler
 from src.translations import init_translations
 
 
@@ -33,6 +33,10 @@ class ActiveCharacter:
 
         # Collega il menu contestuale con tasto destro del mouse sul desktop
         self.window.right_clicked.connect(self.show_context_menu)
+
+        # Collega visibilità della finestra all'animazione per azzerare cicli CPU quando nascosta
+        self.window.window_hidden.connect(self.player.stop_animation)
+        self.window.window_shown.connect(self.player.start_animation)
 
         # Calculate scaling once / Calcola scaling una volta sola
         scale_factor = (character.scale or 100) / 100
@@ -78,8 +82,25 @@ class ActiveCharacter:
                         self.move_to_screen(s)
                     break
 
+    def _teardown_behavior(self):
+        """Pulisce e distrugge il comportamento attivo disconnettendo i segnali dalla finestra."""
+        if self.behavior:
+            try:
+                self.behavior.stop_behavior()
+            except Exception:
+                pass
+            self.behavior = None
+
+        # Disconnetti tutti i vecchi listener dei segnali di trascinamento della finestra
+        for signal in (self.window.drag_started, self.window.position_changed, self.window.drag_ended):
+            try:
+                signal.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+
     def setup_behavior(self, width, height):
         """Configure character behavior / Configura il comportamento del personaggio."""
+        self._teardown_behavior()
         self.window.allow_offscreen = (self.character.behavior == "random_edge")
         self.window.safe_overflow = (self.character.behavior == "static")
 
@@ -162,18 +183,27 @@ class ActiveCharacter:
 
     def show(self):
         """Show the character / Mostra il personaggio."""
-        self.window.show()
+        if self.character.behavior != "random_edge":
+            self.window.show()
+        if self.behavior:
+            if hasattr(self.behavior, "resume_behavior"):
+                self.behavior.resume_behavior()
+            elif hasattr(self.behavior, "start_behavior"):
+                self.behavior.start_behavior()
+        if hasattr(self.player, "start_animation") and self.window.isVisible():
+            self.player.start_animation()
 
     def hide(self):
         """Hide the character / Nasconde il personaggio."""
         self.window.hide()
         if self.behavior:
             self.behavior.stop_behavior()
+        if hasattr(self.player, "stop_animation"):
+            self.player.stop_animation()
 
     def cleanup(self):
         """Clean up resources / Pulisce le risorse."""
-        if self.behavior:
-            self.behavior.stop_behavior()
+        self._teardown_behavior()
         self.audio_manager.stop()
         self.window.close()
 
@@ -358,8 +388,7 @@ class ActiveCharacter:
         if self.character.behavior == new_behavior:
             return
 
-        if self.behavior:
-            self.behavior.stop_behavior()
+        self._teardown_behavior()
 
         self.character.update_config(behavior=new_behavior)
         self.character.save_config()
@@ -550,8 +579,22 @@ class AnimaOverlayApp:
             print(f"Error registering global hotkey: {e}")
         
     def load_active_characters(self):
-        """Don't load active characters at startup - user must select them from launcher / Non carica personaggi attivi all'avvio - l'utente deve selezionarli dal launcher."""
-        pass
+        """Carica e avvia i personaggi che erano attivi all'ultima chiusura con ripristino sicuro auto-healing."""
+        active_names = list(self.config_manager.get_active_characters())
+        for name in active_names:
+            try:
+                char = self.character_manager.get_character(name)
+                if char:
+                    self.activate_character(char)
+                else:
+                    # Rimuovi solo se il personaggio non esiste più fisicamente sul disco
+                    self.config_manager.remove_active_character(name)
+            except Exception:
+                # Registra l'errore nel crash log senza cancellare la sessione in caso di errore temporaneo
+                sys.excepthook(*sys.exc_info())
+
+        if self.launcher:
+            self.launcher.update_active_characters(list(self.active_characters.keys()))
 
     def activate_character(self, character):
         """Activate a character / Attiva un personaggio."""
@@ -704,10 +747,13 @@ class AnimaOverlayApp:
     def on_global_fps_changed(self, limit: int):
         """Aggiorna il limite FPS in tempo reale per tutti i personaggi attivi."""
         for active_char in self.active_characters.values():
-            char_fps = active_char.character.fps if active_char.character.fps is not None else 24
-            fps_to_use = char_fps
-            if limit > 0:
-                fps_to_use = min(fps_to_use, limit)
+            char_fps = active_char.character.fps
+            if char_fps is not None:
+                fps_to_use = char_fps
+                if limit > 0:
+                    fps_to_use = min(fps_to_use, limit)
+            else:
+                fps_to_use = limit if limit > 0 else None
             active_char.player.set_fps(fps_to_use)
 
     def on_fullscreen_pause_changed(self, enabled: bool):
@@ -789,7 +835,7 @@ class AnimaOverlayApp:
 
     def run(self):
         """Start the application / Avvia l'applicazione."""
-        print("Anima Overlay started.")
+        print("Aura Layer started.")
         print(f"Available characters: {', '.join(self.character_manager.get_character_names())}")
 
         # Check if should start minimized / Controlla se avviare minimizzato
@@ -817,6 +863,9 @@ class AnimaOverlayApp:
 
 def main():
     """Application entry point / Entry point dell'applicazione."""
+    # Installa il gestore globale di crash per registrare eccezioni in crash.log
+    install_global_exception_handler()
+
     # Check if another instance is already running / Verifica se un'altra istanza è già in esecuzione
     if not check_single_instance():
         # Create minimal QCoreApplication to use QLocalSocket / Crea una QCoreApplication minima per usare QLocalSocket

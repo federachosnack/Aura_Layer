@@ -4,4 +4,3 @@ pyinstaller>=6.0.0
 rembg>=2.0.50
 onnxruntime
 pywin32>=1.16.0
-jsonschema

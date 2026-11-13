@@ -60,6 +60,8 @@ class OverlayWindow(QWidget):
     drag_ended = pyqtSignal(int, int)  # x, y posizione finale
     position_changed = pyqtSignal(int, int)  # x, y durante drag
     right_clicked = pyqtSignal(QPoint)  # posizione globale per menu contestuale desktop
+    window_shown = pyqtSignal()
+    window_hidden = pyqtSignal()
     
     def __init__(self):
         super().__init__()
@@ -146,6 +148,7 @@ class OverlayWindow(QWidget):
         super().hideEvent(event)
         if self.topmost_timer.isActive():
             self.topmost_timer.stop()
+        self.window_hidden.emit()
 
     def set_click_through(self, enabled: bool):
         """Attiva/disattiva la modalità click-through (mouse trasparente) aggiornando subito la cache Win32."""
@@ -237,6 +240,7 @@ class OverlayWindow(QWidget):
         if not self.topmost_timer.isActive():
             self.topmost_timer.start(500)
         self.force_topmost()
+        self.window_shown.emit()
 
     def mousePressEvent(self, event: QMouseEvent):
         """Gestisce l'inizio del trascinamento o il clic destro."""
