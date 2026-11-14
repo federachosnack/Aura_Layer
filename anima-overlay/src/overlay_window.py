@@ -54,7 +54,7 @@ _user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long
 
 
 class _ForegroundHookManager:
-    """Gestore singleton di processo per l'hook WinEvent di foreground (zero hook orfani, weak references)."""
+    """Gestore singleton di processo per l'hook WinEvent di foreground e timer periodico unificato (zero hook orfani, 1 timer globale)."""
     _instance = None
 
     def __init__(self):
@@ -63,12 +63,7 @@ class _ForegroundHookManager:
         def foreground_callback(hWinEventHook, event, hwnd, idObject, idChild, idThread, dwmsEventTime):
             try:
                 if event == EVENT_SYSTEM_FOREGROUND:
-                    for w in list(self.windows):
-                        try:
-                            if w.isVisible():
-                                w.force_topmost()
-                        except (RuntimeError, AttributeError):
-                            pass
+                    self.assert_topmost_all()
             except Exception:
                 pass
 
@@ -83,18 +78,36 @@ class _ForegroundHookManager:
             WINEVENT_OUTOFCONTEXT
         )
 
+        # Unico timer periodico di fallback per l'intero processo (500 ms) anziché uno per ogni finestra
+        self._topmost_timer = QTimer()
+        self._topmost_timer.setInterval(500)
+        self._topmost_timer.timeout.connect(self.assert_topmost_all)
+
+    def assert_topmost_all(self):
+        """Riasserisce lo stato topmost su tutte le finestre visibili."""
+        for w in list(self.windows):
+            try:
+                if w.isVisible():
+                    w.force_topmost()
+            except (RuntimeError, AttributeError):
+                pass
+
     @classmethod
     def register(cls, win):
         """Registra una finestra presso il gestore hook condiviso."""
         if cls._instance is None:
             cls._instance = cls()
         cls._instance.windows.add(win)
+        if not cls._instance._topmost_timer.isActive():
+            cls._instance._topmost_timer.start()
 
     @classmethod
     def unregister(cls, win):
         """Deregistra una finestra dal gestore hook condiviso."""
         if cls._instance is not None:
             cls._instance.windows.discard(win)
+            if not cls._instance.windows and cls._instance._topmost_timer.isActive():
+                cls._instance._topmost_timer.stop()
 
 
 class OverlayWindow(QWidget):
@@ -116,11 +129,7 @@ class OverlayWindow(QWidget):
         self.allow_offscreen = False
         self.safe_overflow = False
 
-        # Timer fallback per riasserire topmost a intervalli regolari (attivo solo quando visibile)
-        self.topmost_timer = QTimer(self)
-        self.topmost_timer.timeout.connect(self.force_topmost)
-
-        # Registrazione presso il gestore singleton WinEvent hook condiviso di processo
+        # Registrazione presso il gestore singleton WinEvent hook e timer condiviso di processo
         _ForegroundHookManager.register(self)
         
     def setup_window(self):
@@ -150,17 +159,13 @@ class OverlayWindow(QWidget):
         _ForegroundHookManager.unregister(self)
 
     def closeEvent(self, event):
-        """Pulisce risorse e ferma il timer alla chiusura."""
+        """Pulisce risorse alla chiusura."""
         _ForegroundHookManager.unregister(self)
-        if self.topmost_timer.isActive():
-            self.topmost_timer.stop()
         super().closeEvent(event)
 
     def hideEvent(self, event):
-        """Ferma il timer topmost quando la finestra viene nascosta per azzerare cicli CPU."""
+        """Emette segnale quando la finestra viene nascosta per azzerare cicli CPU."""
         super().hideEvent(event)
-        if self.topmost_timer.isActive():
-            self.topmost_timer.stop()
         self.window_hidden.emit()
 
     def set_click_through(self, enabled: bool):
@@ -250,8 +255,6 @@ class OverlayWindow(QWidget):
             clamped = self.clamp_to_screen(self.pos())
             if self.pos() != clamped:
                 super().move(clamped)
-        if not self.topmost_timer.isActive():
-            self.topmost_timer.start(500)
         self.force_topmost()
         self.window_shown.emit()
 

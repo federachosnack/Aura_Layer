@@ -13,8 +13,10 @@ from src.character import CharacterManager
 from src.tray_manager import TrayManager
 from src.config_manager import ConfigManager
 from src.launcher import LauncherWindow, make_icon
-from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path, is_fullscreen_active, install_global_exception_handler
+from src.utils import migrate_from_local_if_needed, check_single_instance, resource_path, is_fullscreen_active, install_global_exception_handler, get_app_logger
 from src.translations import init_translations
+
+logger = get_app_logger()
 
 
 class ActiveCharacter:
@@ -61,7 +63,7 @@ class ActiveCharacter:
                 self.player.start_animation()
                 self.player.show()
             except Exception as e:
-                print(f"Error loading animation for {character.name}: {e}")
+                logger.error(f"Error loading animation for {character.name}: {e}")
 
             # Configure window with scaling / Configura finestra con scaling
             self.window.resize(scaled_width, scaled_height)
@@ -85,12 +87,12 @@ class ActiveCharacter:
                         if curr_s != s:
                             self.move_to_screen(s)
                         break
-        except Exception as e:
+        except Exception:
             try:
                 self.cleanup()
             except Exception:
                 pass
-            raise e
+            raise
 
     def _teardown_behavior(self):
         """Pulisce e distrugge il comportamento attivo disconnettendo i segnali dalla finestra."""
@@ -853,8 +855,8 @@ class AnimaOverlayApp:
 
     def run(self):
         """Start the application / Avvia l'applicazione."""
-        print("Aura Layer started.")
-        print(f"Available characters: {', '.join(self.character_manager.get_character_names())}")
+        logger.info("Aura Layer started.")
+        logger.info(f"Available characters: {', '.join(self.character_manager.get_character_names())}")
 
         # Check if should start minimized / Controlla se avviare minimizzato
         start_minimized = self.config_manager.get_global_setting("start_minimized", False)
@@ -862,9 +864,9 @@ class AnimaOverlayApp:
             # Show launcher at startup (like Wallpaper Engine) / Mostra il launcher all'avvio (come Wallpaper Engine)
             self.open_launcher()
         else:
-            print("Starting minimized - use system tray icon to open launcher.")
+            logger.info("Starting minimized - use system tray icon to open launcher.")
 
-        print("Use launcher to select and start characters.")
+        logger.info("Use launcher to select and start characters.")
 
         sys.exit(self.app.exec())
 

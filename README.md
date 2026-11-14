@@ -1,7 +1,7 @@
 # Aura Layer
 
-![License](https://img.shields.io/badge/license-Aura%20Layer-blue.svg)
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
@@ -9,7 +9,7 @@ Aura Layer is a desktop character overlay application for Windows that lets you 
 
 Characters can remain static, move freely around the screen, interact with screen edges, or react to gravity. You can also add custom characters, animations, audio, and configure appearance and performance settings.
 
-**Status**: Stable Windows v1.1.0 release available. Aura Layer is actively maintained and will continue to receive updates, improvements, and new features.
+**Status**: Stable Windows v1.2.0 release available. Aura Layer is actively maintained and will continue to receive updates, improvements, and new features.
 
 ## Download
 
@@ -125,23 +125,31 @@ Aura_Layer/
 ├── LICENSE
 ├── README.md
 └── anima-overlay/
-    ├── main.py                 # Application entry point
-    ├── build_pyinstaller.py    # Build script
-    ├── requirements.txt        # Python dependencies
+    ├── main.py                 # Application entry point & tray lifecycle
+    ├── build_pyinstaller.py    # Standalone PyInstaller compilation script
+    ├── requirements.txt        # Runtime dependencies
+    ├── requirements-dev.txt    # Build & testing dependencies
+    ├── tests/                  # Automated test suite (pytest / unittest)
+    │   ├── test_character.py
+    │   ├── test_utils_security.py
+    │   ├── test_i18n.py
+    │   └── test_hook_and_lifecycle.py
     └── src/
-        ├── launcher.py          # Main UI window
-        ├── character.py         # Character management
-        ├── config_manager.py    # Configuration handling
+        ├── launcher.py          # Cyber Glass UI window & package manager
+        ├── character.py         # Character model, type validation & clamping
+        ├── overlay_window.py    # Desktop overlay & singleton WinEvent hook
+        ├── behaviors.py         # Physics (Gravity, FreeWalk, RandomEdge)
+        ├── config_manager.py    # Atomic configuration manager
         ├── tray_manager.py      # System tray integration
-        ├── translations.py      # Translation system
+        ├── translations.py      # Symmetrical localization (245 keys)
         ├── background_remover.py # AI background removal
-        └── ...
+        └── utils.py             # Atomic I/O, security, app logging
 ```
 
 ## Dependencies
 
-- PyQt6: GUI framework
-- Pillow: Image processing
+- PyQt6: GUI framework (GPLv3)
+- Pillow: Image and animation processing
 - rembg: AI background removal
 - onnxruntime: Machine learning runtime
 - pywin32: Windows API integration
@@ -156,44 +164,36 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## Translation
+## Testing
 
-To add a new language:
+Run the full automated test suite using unittest or pytest:
 
-1. Add translations to `anima-overlay/src/translations.py`
-2. Add the language selector option in `anima-overlay/src/launcher.py`
-3. Update the configuration system
+```bash
+cd anima-overlay
+python -m unittest discover -s tests -p "test_*.py"
+```
 
 ## License
 
-Aura Layer is distributed under the Aura Layer License, a custom source-available license.
-
-The license permits:
-- Free use for any purpose
-- Study and modification of the software
-- Private modifications (no obligation to publish source code)
-- Free distribution of original and modified versions
-- Commercial distribution of substantially modified versions (with significant improvements)
-
-The license restricts:
-- Commercial sale of the original software
-- Commercial sale of minimally modified versions
-- Use of the Aura Layer name to imply official endorsement
-
-See the [LICENSE](LICENSE) file for the complete terms.
+Aura Layer is open-source software licensed under the **GNU General Public License v3.0 (GPLv3)** in compliance with the PyQt6 framework requirements. See the [LICENSE](LICENSE) file for complete terms.
 
 ## Roadmap
 
-- [ ] Linux support (Steam Deck / Wayland / X11)
-- [x] Further multi-monitor improvements
-- [x] Additional interaction features
-- [x] Performance and stability improvements
+- [ ] Linux / Steam Deck support (Wayland & X11 transparent overlays)
+- [ ] macOS support (Metal transparency layer)
+- [ ] PySide6 (LGPL) migration option
+- [ ] Spatialized 3D audio effects based on character screen coordinates
+- [ ] Community online repository for one-click `.aura` package sharing
 
 ## Troubleshooting
 
 If you encounter unexpected behavior or errors:
-- Diagnostics and crash dumps are automatically logged to %APPDATA%\AuraLayer\crash.log.
-- To report an issue, please attach the contents of crash.log when opening an issue on GitHub.
+- Diagnostics and operational logs are stored in `%APPDATA%\AuraLayer`:
+  - `app.log`: Operational events, warnings, and character loading diagnostics.
+  - `crash.log`: Python tracebacks with automatic deduplication and runtime rotation.
+  - `native_crash.log`: Low-level C/Win32 faulthandler crash dumps.
+- To open the logs folder: Press `Win + R`, type `%APPDATA%\AuraLayer` and press Enter.
+- When reporting an issue on GitHub, please attach these log files.
 
 ## Support
 

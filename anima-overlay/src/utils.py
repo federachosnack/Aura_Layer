@@ -8,6 +8,8 @@ import zipfile
 import traceback
 import time
 import atexit
+import logging
+from logging.handlers import RotatingFileHandler
 import faulthandler
 from pathlib import Path
 from datetime import datetime
@@ -191,6 +193,40 @@ def get_app_data_dir() -> str:
         os.makedirs(app_data_dir)
 
     return app_data_dir
+
+
+_app_logger: Optional[logging.Logger] = None
+
+
+def get_app_logger() -> logging.Logger:
+    """
+    Restituisce il logger principale dell'applicazione con RotatingFileHandler
+    su %APPDATA%/AuraLayer/app.log (rotazione automatica a 1 MB).
+    """
+    global _app_logger
+    if _app_logger is not None:
+        return _app_logger
+
+    _app_logger = logging.getLogger("AuraLayer")
+    _app_logger.setLevel(logging.INFO)
+
+    if not _app_logger.handlers:
+        log_dir = get_app_data_dir()
+        app_log_file = os.path.join(log_dir, "app.log")
+        formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+        try:
+            file_handler = RotatingFileHandler(app_log_file, maxBytes=1024 * 1024, backupCount=2, encoding="utf-8")
+            file_handler.setFormatter(formatter)
+            _app_logger.addHandler(file_handler)
+        except Exception:
+            pass
+
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        _app_logger.addHandler(console_handler)
+
+    return _app_logger
 
 
 def atomic_write_json(file_path: str, data: dict, indent: int = 2) -> bool:

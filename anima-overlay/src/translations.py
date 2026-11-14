@@ -173,7 +173,7 @@ class Translations:
 
             # Info
             "info_title": "Informazioni",
-            "info_version": "Versione: 1.1.0",
+            "info_version": "Versione: 1.2.0",
             "info_project": "Aura Layer - Desktop Overlay",
             "info_credits": "Progettato per migliorare la tua esperienza desktop",
 
@@ -503,7 +503,7 @@ class Translations:
 
             # Info
             "info_title": "Information",
-            "info_version": "Version: 1.1.0",
+            "info_version": "Version: 1.2.0",
             "info_project": "Aura Layer - Desktop Overlay",
             "info_credits": "Designed to enhance your desktop experience",
 

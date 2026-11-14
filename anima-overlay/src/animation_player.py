@@ -3,6 +3,9 @@ from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtCore import QTimer
 from PIL import Image, ImageSequence
 import os
+from .utils import get_app_logger
+
+logger = get_app_logger()
 
 
 class AnimationPlayer(QLabel):
@@ -38,7 +41,7 @@ class AnimationPlayer(QLabel):
             with Image.open(path) as img:
                 raw_n = getattr(img, "n_frames", 1)
                 if raw_n > MAX_FRAMES:
-                    print(f"Info: animazione {path} contiene {raw_n} frame (superiore al limite di {MAX_FRAMES}). Vengono caricati i primi {MAX_FRAMES} frame.")
+                    logger.warning(f"Animazione {path} contiene {raw_n} frame (superiore al limite di {MAX_FRAMES}). Vengono caricati i primi {MAX_FRAMES} frame.")
                 n_frames = min(MAX_FRAMES, max(1, raw_n))
                 # Budget dinamico memoria: ~128 MB per animazione (4 byte/pixel RGBA) per prevenire OOM anche con molteplici personaggi attivi
                 side = int((128 * 1024 * 1024 / (n_frames * 4)) ** 0.5)
