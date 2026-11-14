@@ -502,7 +502,7 @@ class AnimaOverlayApp:
         # Create local server for IPC (to receive requests from other instances) / Crea server locale per IPC (per ricevere richieste da altre istanze)
         self.ipc_server = QLocalServer()
         if not self.ipc_server.listen("AuraLayerIPC"):
-            print(f"Warning: IPC server not started: {self.ipc_server.errorString()}")
+            logger.warning(f"Warning: IPC server not started: {self.ipc_server.errorString()}")
         self.ipc_server.newConnection.connect(self._on_ipc_connection)
 
         # Migrate data from local folder to APPDATA if needed / Migra dati dalla cartella locale a APPDATA se necessario
@@ -517,7 +517,7 @@ class AnimaOverlayApp:
             language = self.config_manager.get_global_setting("language", "it")
             self.translations = init_translations(language)
         except Exception as e:
-            print(f"Error initializing translations: {e}")
+            logger.error(f"Error initializing translations: {e}")
             # Fallback to simple translations without translation system
             self.translations = None
 
@@ -592,11 +592,11 @@ class AnimaOverlayApp:
                 # Fallback senza MOD_NOREPEAT
                 res = user32.RegisterHotKey(None, HOTKEY_ID_TOGGLE_ALL, MOD_CONTROL | MOD_ALT, VK_H)
             if res:
-                print("Global hotkey Ctrl+Alt+H successfully registered.")
+                logger.info("Global hotkey Ctrl+Alt+H successfully registered.")
             else:
-                print("Warning: Global hotkey Ctrl+Alt+H could not be registered (may be in use by another app).")
+                logger.warning("Warning: Global hotkey Ctrl+Alt+H could not be registered (may be in use by another app).")
         except Exception as e:
-            print(f"Error registering global hotkey: {e}")
+            logger.error(f"Error registering global hotkey: {e}")
         
     def load_active_characters(self):
         """Carica e avvia i personaggi che erano attivi all'ultima chiusura con ripristino sicuro auto-healing."""
@@ -655,7 +655,7 @@ class AnimaOverlayApp:
     def toggle_all_characters(self):
         """Show/hide all active characters / Mostra/nasconde tutti i personaggi attivi."""
         if not self.active_characters:
-            print("No active characters to show. Use launcher to activate them.")
+            logger.info("No active characters to show. Use launcher to activate them.")
             return
 
         if self.all_hidden:

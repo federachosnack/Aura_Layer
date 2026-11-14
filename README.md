@@ -1,6 +1,6 @@
 # Aura Layer
 
-![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
+[![License](https://img.shields.io/badge/license-Aura_Layer_License-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
@@ -175,7 +175,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## License
 
-Aura Layer is open-source software licensed under the **GNU General Public License v3.0 (GPLv3)** in compliance with the PyQt6 framework requirements. See the [LICENSE](LICENSE) file for complete terms.
+Aura Layer is licensed under the custom **Aura Layer License**. You are free to use, modify, and distribute it freely for non-commercial purposes or distribute substantially modified versions, but direct commercial resale of the original software is strictly prohibited. See the [LICENSE](LICENSE) file for complete terms and conditions.
 
 ## Roadmap
 

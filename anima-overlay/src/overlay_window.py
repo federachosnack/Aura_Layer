@@ -4,6 +4,9 @@ from PyQt6.QtGui import QMouseEvent, QGuiApplication, QCursor
 import ctypes
 import weakref
 from ctypes import wintypes
+from .utils import get_app_logger
+
+logger = get_app_logger()
 
 # Costanti Win32 per SetWindowPos
 HWND_TOPMOST = -1
@@ -84,13 +87,19 @@ class _ForegroundHookManager:
         self._topmost_timer.timeout.connect(self.assert_topmost_all)
 
     def assert_topmost_all(self):
-        """Riasserisce lo stato topmost su tutte le finestre visibili."""
+        """Riasserisce lo stato topmost su tutte le finestre visibili (con auto-standby 0% CPU se tutte nascoste)."""
+        has_visible = False
         for w in list(self.windows):
             try:
                 if w.isVisible():
+                    has_visible = True
                     w.force_topmost()
             except (RuntimeError, AttributeError):
                 pass
+
+        # Standby profondo: ferma il timer periodico se nessuna finestra è attualmente visibile
+        if not has_visible and self._topmost_timer.isActive():
+            self._topmost_timer.stop()
 
     @classmethod
     def register(cls, win):
@@ -98,7 +107,13 @@ class _ForegroundHookManager:
         if cls._instance is None:
             cls._instance = cls()
         cls._instance.windows.add(win)
-        if not cls._instance._topmost_timer.isActive():
+        if win.isVisible() and not cls._instance._topmost_timer.isActive():
+            cls._instance._topmost_timer.start()
+
+    @classmethod
+    def on_window_shown(cls):
+        """Risveglia il timer periodico condiviso quando una finestra diventa visibile."""
+        if cls._instance is not None and not cls._instance._topmost_timer.isActive():
             cls._instance._topmost_timer.start()
 
     @classmethod
@@ -152,7 +167,7 @@ class OverlayWindow(QWidget):
 
         if not result:
             error_code = ctypes.GetLastError()
-            print(f"SetWindowPos fallito, codice errore: {error_code}")
+            logger.warning(f"SetWindowPos fallito, codice errore: {error_code}")
 
     def cleanup_hook(self):
         """Deregistra la finestra dal gestore hook condiviso."""

@@ -1,6 +1,11 @@
 import unittest
 import os
 import sys
+import tempfile
+
+# Isola APPDATA prima di importare qualsiasi modulo di Aura Layer
+if "APPDATA" not in os.environ or "auralayer_test" not in os.environ["APPDATA"]:
+    os.environ["APPDATA"] = tempfile.mkdtemp(prefix="auralayer_test_")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.translations import Translations

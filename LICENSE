@@ -1,17 +1,46 @@
-GNU GENERAL PUBLIC LICENSE
-Version 3, 29 June 2007
+Aura Layer License
+Copyright (c) 2026 Aura Layer Contributors
 
-Copyright (C) 2026 Aura Layer Contributors
+PERMISSIONS
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+You are free to:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+- Use the Software for any purpose, including commercial use, provided that the Software is not commercially sold or distributed in violation of this license.
+- Study how the Software works and modify it in any way.
+- Keep your modifications completely private. You are not required to disclose or publish your modified source code.
+- Distribute copies of the original Software free of charge.
+- Distribute modified versions of the Software free of charge, even if the modifications are minimal.
+- Sell substantially modified versions of the Software, subject to the conditions below.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+CONDITIONS
+
+1. ATTRIBUTION
+If you commercially distribute a modified version of the Software, you must include a reasonable acknowledgment that your version is based on or derived from the original Aura Layer open-source project.
+This acknowledgment does not need to be prominent and may be included in the application's documentation, credits, about page, repository, website, or other appropriate location.
+You are not required to use the Aura Layer name, logo, branding, or other visual elements in a way that suggests endorsement by the original authors.
+
+2. NO COMMERCIAL RESALE OF ORIGINAL SOFTWARE
+You may NOT sell, license, rent, sublicense, or otherwise commercially distribute the Software in its original form.
+You may also NOT commercially distribute a version that contains only trivial, cosmetic, or otherwise insubstantial modifications to the original Software. 
+3. SUBSTANTIAL MODIFICATIONS REQUIRED FOR COMMERCIAL DISTRIBUTION
+You may commercially distribute a modified version of the Software ONLY if your version contains substantial original additions, improvements, functionality, features, or other meaningful changes that materially distinguish it from the original Software.
+Examples of substantial modifications include but are not limited to:
+
+- Significant new features or functionality
+- Major performance improvements
+- Major architectural or code changes that materially improve or extend the Software
+- Integration with other significant systems or platforms
+- Original creative content that adds value beyond the original
+
+You are NOT required to publish, disclose, or otherwise make available the source code of your modifications.
+
+4. LICENSE PRESERVATION
+
+You must include a copy of this license in any distribution of the Software or a substantial derivative work.
+
+5. NO ENDORSEMENT
+You may not use the name, branding, trademarks, or identity of Aura Layer or the Aura Layer Contributors in a way that suggests that your modified version is officially developed, endorsed, or supported by the original authors, unless you have received explicit permission.
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

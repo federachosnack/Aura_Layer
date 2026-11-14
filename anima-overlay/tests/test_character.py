@@ -4,6 +4,10 @@ import tempfile
 import json
 import sys
 
+# Isola APPDATA prima di importare qualsiasi modulo di Aura Layer
+if "APPDATA" not in os.environ or "auralayer_test" not in os.environ["APPDATA"]:
+    os.environ["APPDATA"] = tempfile.mkdtemp(prefix="auralayer_test_")
+
 # Assicura importazione moduli
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.character import Character

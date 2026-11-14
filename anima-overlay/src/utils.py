@@ -19,15 +19,15 @@ from typing import Optional, Tuple
 
 def sanitize_filename(name: str, default: str = "character") -> str:
     """
-    Sanitizza un nome file o cartella per Windows:
-    - Prende solo il basename (elimina ../../ e percorsi assoluti).
+    Sanitizza un nome file o cartella in modo cross-platform (Windows/Linux/macOS):
+    - Taglia qualsiasi percorso (sia / che \\) per estrarre il nome base.
     - Rimuove caratteri vietati nei filesystem Windows (\\ / : * ? " < > |).
     - Rimuove caratteri di controllo non stampabili.
     - Evita nomi di periferica riservati di Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
     """
     if not name:
         return default
-    base = os.path.basename(name).strip()
+    base = re.split(r"[\\/]", str(name))[-1].strip()
     cleaned = re.sub(r'[\\/*?:"<>|\x00-\x1f]', '', base).strip()
     cleaned = cleaned.rstrip('. ')
     reserved = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
@@ -222,9 +222,13 @@ def get_app_logger() -> logging.Logger:
         except Exception:
             pass
 
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        _app_logger.addHandler(console_handler)
+        if sys.stdout is not None:
+            try:
+                console_handler = logging.StreamHandler(sys.stdout)
+                console_handler.setFormatter(formatter)
+                _app_logger.addHandler(console_handler)
+            except Exception:
+                pass
 
     return _app_logger
 
@@ -234,6 +238,7 @@ def atomic_write_json(file_path: str, data: dict, indent: int = 2) -> bool:
     Scrive dati JSON in modo atomico (file temporaneo + os.replace)
     per prevenire corruzioni o file troncati a 0 byte in caso di crash o spegnimento improvviso.
     """
+    logger = get_app_logger()
     dir_name = os.path.dirname(file_path)
     if dir_name and not os.path.exists(dir_name):
         os.makedirs(dir_name, exist_ok=True)
@@ -246,7 +251,7 @@ def atomic_write_json(file_path: str, data: dict, indent: int = 2) -> bool:
         os.replace(tmp_path, file_path)
         return True
     except Exception as e:
-        print(f"Error atomic writing {file_path}: {e}")
+        logger.error(f"Error atomic writing {file_path}: {e}")
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -268,23 +273,25 @@ def migrate_from_local_if_needed() -> None:
     app_characters_dir = os.path.join(app_data_dir, "characters")
     app_config_file = os.path.join(app_data_dir, "config.json")
 
+    logger = get_app_logger()
+
     # Migra characters se esiste localmente e non in APPDATA
     if os.path.exists(local_characters_dir) and not os.path.exists(app_characters_dir):
-        print("Migrazione cartella characters in corso...")
+        logger.info("Migrazione cartella characters in corso...")
         try:
             shutil.copytree(local_characters_dir, app_characters_dir)
-            print(f"Characters migrati da {local_characters_dir} a {app_characters_dir}")
+            logger.info(f"Characters migrati da {local_characters_dir} a {app_characters_dir}")
         except Exception as e:
-            print(f"Errore durante la migrazione characters: {e}")
+            logger.error(f"Errore durante la migrazione characters: {e}")
 
     # Migra config se esiste localmente e non in APPDATA
     if os.path.exists(local_config_file) and not os.path.exists(app_config_file):
-        print("Migrazione config.json in corso...")
+        logger.info("Migrazione config.json in corso...")
         try:
             shutil.copy2(local_config_file, app_config_file)
-            print(f"Config migrato da {local_config_file} a {app_config_file}")
+            logger.info(f"Config migrato da {local_config_file} a {app_config_file}")
         except Exception as e:
-            print(f"Errore durante la migrazione config: {e}")
+            logger.error(f"Errore durante la migrazione config: {e}")
 
 
 # Handle globale per mantenere in vita il mutex dell'istanza singola

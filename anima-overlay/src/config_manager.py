@@ -2,7 +2,9 @@ import json
 import os
 import shutil
 from typing import Dict, Any, List, Optional
-from src.utils import get_app_data_dir, atomic_write_json
+from src.utils import get_app_data_dir, atomic_write_json, get_app_logger
+
+logger = get_app_logger()
 
 
 class ConfigManager:
@@ -29,11 +31,11 @@ class ConfigManager:
                     self.config = json.load(f)
                 loaded = True
             except Exception as e:
-                print(f"Error loading config from {self.config_file}: {e}")
+                logger.error(f"Error loading config from {self.config_file}: {e}")
                 # Backup corrupted file for safety / Salva backup del file corrotto per sicurezza
                 try:
                     shutil.copy2(self.config_file, f"{self.config_file}.corrupted")
-                    print(f"Corrupted config backed up to {self.config_file}.corrupted")
+                    logger.warning(f"Corrupted config backed up to {self.config_file}.corrupted")
                 except Exception:
                     pass
 
@@ -43,7 +45,7 @@ class ConfigManager:
                 with open(tmp_file, 'r', encoding='utf-8') as f:
                     self.config = json.load(f)
                 loaded = True
-                print(f"Config successfully recovered from {tmp_file}")
+                logger.info(f"Config successfully recovered from {tmp_file}")
                 self.save_config()
             except Exception:
                 pass

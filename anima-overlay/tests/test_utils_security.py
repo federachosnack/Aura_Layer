@@ -5,6 +5,10 @@ import zipfile
 import tempfile
 import sys
 
+# Isola APPDATA prima di importare qualsiasi modulo di Aura Layer
+if "APPDATA" not in os.environ or "auralayer_test" not in os.environ["APPDATA"]:
+    os.environ["APPDATA"] = tempfile.mkdtemp(prefix="auralayer_test_")
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.utils import validate_aura_zip, sanitize_filename, atomic_write_json, get_app_logger
 

@@ -6,7 +6,9 @@ import subprocess
 import tempfile
 from typing import Optional
 import zipfile
-from .utils import resource_path, atomic_write_json, get_app_data_dir, sanitize_filename, validate_aura_zip
+from .utils import resource_path, atomic_write_json, get_app_data_dir, sanitize_filename, validate_aura_zip, get_app_logger
+
+logger = get_app_logger()
 
 from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal, QThread, QPointF
 from PyQt6.QtGui import (
@@ -1751,7 +1753,7 @@ class BackgroundRemovalThread(QThread):
             self.finished.emit(success, self.output_path, self.backup_path)
         except Exception as e:
             # Cattura qualsiasi eccezione per evitare crash dell'app
-            print(f"Errore durante rimozione sfondo: {e}")
+            logger.error(f"Errore durante rimozione sfondo: {e}")
             self.finished.emit(False, self.output_path, self.backup_path)
 
 

@@ -2,6 +2,9 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, pyqtSignal
 import os
+from .utils import get_app_logger
+
+logger = get_app_logger()
 
 
 class TrayManager(QObject):
@@ -48,9 +51,9 @@ class TrayManager(QObject):
 
         # Check if system supports tray icons / Verifica se il sistema supporta le tray icons
         if not self.tray_icon.isSystemTrayAvailable():
-            print("WARNING: System tray not available on this system")
+            logger.warning("System tray not available on this system")
         else:
-            print("System tray icon created successfully")
+            logger.info("System tray icon created successfully")
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason):
         """Apre il launcher al click sinistro o doppio click sull'icona della barra di sistema."""

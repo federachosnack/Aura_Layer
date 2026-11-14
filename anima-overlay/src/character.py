@@ -1,7 +1,9 @@
 import json
 import os
 from typing import Dict, Any, Optional
-from src.utils import get_app_data_dir, atomic_write_json
+from src.utils import get_app_data_dir, atomic_write_json, get_app_logger
+
+logger = get_app_logger()
 
 
 class Character:
@@ -208,7 +210,7 @@ class CharacterManager:
                         character = Character(character_path)
                         self.characters[item] = character
                     except Exception as e:
-                        print(f"Error loading character {item}: {e}")
+                        logger.error(f"Error loading character {item}: {e}")
                         
     def get_character(self, name: str) -> Optional[Character]:
         """Ottiene un personaggio per nome."""
@@ -222,7 +224,7 @@ class CharacterManager:
             self.characters[character_name] = character
             return character
         except Exception as e:
-            print(f"Error adding character: {e}")
+            logger.error(f"Error adding character: {e}")
             return None
             
     def remove_character(self, name: str) -> bool:

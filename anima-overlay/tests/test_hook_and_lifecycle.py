@@ -1,6 +1,12 @@
 import unittest
 import os
 import sys
+import tempfile
+from PIL import Image
+
+# Isola APPDATA prima di importare qualsiasi modulo di Aura Layer
+if "APPDATA" not in os.environ or "auralayer_test" not in os.environ["APPDATA"]:
+    os.environ["APPDATA"] = tempfile.mkdtemp(prefix="auralayer_test_")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -31,10 +37,21 @@ class TestHookAndLifecycle(unittest.TestCase):
         win2.close()
         self.assertNotIn(win2, mgr1.windows)
 
-    def test_animation_player_budget(self):
-        """Verifica che il budget di 128 MB calcoli le dimensioni corrette senza crash."""
-        player = AnimationPlayer()
-        self.assertIsNotNone(player)
+    def test_animation_player_budget_and_clamping(self):
+        """Verifica che animazioni superiori a 400 frame vengano limitate a 400 salvaguardando la memoria."""
+        with tempfile.TemporaryDirectory() as td:
+            gif_path = os.path.join(td, "long_animation.gif")
+            # Crea un'animazione con 450 frame
+            frames = [Image.new("RGBA", (16, 16), (i % 255, 100, 100, 255)) for i in range(450)]
+            frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=40, loop=0)
+
+            player = AnimationPlayer()
+            player.load_animation(gif_path)
+
+            self.assertEqual(len(player.frames), 400)
+            self.assertEqual(len(player.durations), 400)
+            self.assertEqual(player.durations[0], 40)
+            self.assertFalse(player.frames[0].isNull())
 
 
 if __name__ == "__main__":

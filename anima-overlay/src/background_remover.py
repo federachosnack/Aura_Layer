@@ -1,5 +1,8 @@
 import os
 from PIL import Image
+from .utils import get_app_logger
+
+logger = get_app_logger()
 
 # Disabilita JIT di numba per migliorare stabilità in eseguibili compilati
 os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
@@ -21,7 +24,7 @@ class BackgroundRemover:
                 output_image.save(output_path)
             return True
         except Exception as e:
-            print(f"Error removing background: {e}")
+            logger.error(f"Error removing background: {e}")
             return False
 
     @staticmethod
