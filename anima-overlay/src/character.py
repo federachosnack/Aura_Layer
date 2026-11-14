@@ -45,29 +45,29 @@ class Character:
             self.config = json.load(f)
 
         # Estrai i campi dalla configurazione con type-coercion e clamping di sicurezza
-        self.name = str(self.config.get("name", "Unnamed Character")).strip() or "Unnamed Character"
+        folder_name = os.path.basename(os.path.normpath(self.character_path))
+        raw_name = self.config.get("name")
+        self.name = str(raw_name).strip() if (raw_name and str(raw_name).strip()) else folder_name
         self.animation_file = str(self.config.get("animation_file", ""))
         raw_audio = self.config.get("audio_file")
         self.audio_file = str(raw_audio) if raw_audio else None
 
         valid_behaviors = {"static", "free_walk", "random_edge", "gravity"}
         raw_behavior = self.config.get("behavior", "static")
-        self.behavior = raw_behavior if raw_behavior in valid_behaviors else "static"
+        self.behavior = raw_behavior if (isinstance(raw_behavior, str) and raw_behavior in valid_behaviors) else "static"
 
         try:
-            self.width = max(10, min(4000, int(self.config.get("width", 200))))
+            self.width = max(10, min(2000, int(self.config.get("width", 200))))
         except (ValueError, TypeError):
             self.width = 200
 
         try:
-            self.height = max(10, min(4000, int(self.config.get("height", 200))))
+            self.height = max(10, min(2000, int(self.config.get("height", 200))))
         except (ValueError, TypeError):
             self.height = 200
 
-        try:
-            self.draggable = bool(self.config.get("draggable", True))
-        except Exception:
-            self.draggable = True
+        raw_draggable = self.config.get("draggable", True)
+        self.draggable = raw_draggable in (True, 1, "true", "True")
 
         try:
             self.speed = max(0.1, min(10.0, float(self.config.get("speed", 1.0))))
@@ -134,12 +134,12 @@ class Character:
                     value = 0.5
             elif key == "behavior" and value is not None:
                 valid_behaviors = {"static", "free_walk", "random_edge", "gravity"}
-                value = value if value in valid_behaviors else "static"
-            elif key == "locked":
+                value = value if (isinstance(value, str) and value in valid_behaviors) else "static"
+            elif key in ("locked", "draggable", "play_audio_on_startup"):
                 value = value in (True, 1, "true", "True")
             elif key in ("width", "height") and value is not None:
                 try:
-                    value = max(10, min(4000, int(value)))
+                    value = max(10, min(2000, int(value)))
                 except (ValueError, TypeError):
                     value = 200
 

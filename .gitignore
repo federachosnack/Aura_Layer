@@ -46,11 +46,17 @@ Desktop.ini
 !.env.example
 
 # Project-specific user data
-characters/
-config.json
+/config.json
+/characters/
+anima-overlay/config.json
+anima-overlay/characters/
 *.corrupted
 *.bak
 *_backup.*
+
+# Test caches
+.pytest_cache/
+.coverage
 
 # AI/Agent documentation
 AGENTS.md

@@ -27,11 +27,14 @@ class ActiveCharacter:
         self.translations = translations
         self.overlay_app = overlay_app
         self.window = OverlayWindow()
-        self.player = AnimationPlayer(self.window)
+        self.player = None
         self.behavior = None
-        self.audio_manager = AudioManager()
+        self.audio_manager = None
 
         try:
+            self.player = AnimationPlayer(self.window)
+            self.audio_manager = AudioManager()
+
             # Collega il menu contestuale con tasto destro del mouse sul desktop
             self.window.right_clicked.connect(self.show_context_menu)
 
@@ -70,11 +73,11 @@ class ActiveCharacter:
             self.setup_behavior(scaled_width, scaled_height)
 
             # Play audio if present / Riproduci audio se presente e abilitato
-            if character.has_audio() and character.config.get("play_audio_on_startup", True):
+            if character.has_audio() and character.play_audio_on_startup:
                 self.audio_manager.play_sound(character.get_audio_path(), character.volume)
 
             # Applica schermo preferito se assegnato (stile Wallpaper Engine)
-            pref_screen_name = character.config.get("preferred_screen")
+            pref_screen_name = character.preferred_screen
             if pref_screen_name and pref_screen_name != "auto":
                 for s in QGuiApplication.screens():
                     if s.name() == pref_screen_name:
@@ -82,9 +85,12 @@ class ActiveCharacter:
                         if curr_s != s:
                             self.move_to_screen(s)
                         break
-        except Exception:
-            self.cleanup()
-            raise
+        except Exception as e:
+            try:
+                self.cleanup()
+            except Exception:
+                pass
+            raise e
 
     def _teardown_behavior(self):
         """Pulisce e distrugge il comportamento attivo disconnettendo i segnali dalla finestra."""
@@ -206,10 +212,18 @@ class ActiveCharacter:
             self.player.stop_animation()
 
     def cleanup(self):
-        """Clean up resources / Pulisce le risorse."""
+        """Clean up resources / Pulisce le risorse in modo sicuro."""
         self._teardown_behavior()
-        self.audio_manager.stop()
-        self.window.close()
+        if self.audio_manager:
+            try:
+                self.audio_manager.stop()
+            except Exception:
+                pass
+        if self.window:
+            try:
+                self.window.close()
+            except Exception:
+                pass
 
     def show_context_menu(self, pos: QPoint):
         """Apre il menu contestuale rapido in stile Cyber Glass sul desktop."""

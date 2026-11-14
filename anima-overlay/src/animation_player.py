@@ -37,6 +37,8 @@ class AnimationPlayer(QLabel):
         try:
             with Image.open(path) as img:
                 raw_n = getattr(img, "n_frames", 1)
+                if raw_n > MAX_FRAMES:
+                    print(f"Info: animazione {path} contiene {raw_n} frame (superiore al limite di {MAX_FRAMES}). Vengono caricati i primi {MAX_FRAMES} frame.")
                 n_frames = min(MAX_FRAMES, max(1, raw_n))
                 # Budget dinamico memoria: ~128 MB per animazione (4 byte/pixel RGBA) per prevenire OOM anche con molteplici personaggi attivi
                 side = int((128 * 1024 * 1024 / (n_frames * 4)) ** 0.5)

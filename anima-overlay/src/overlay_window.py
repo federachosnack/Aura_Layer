@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
 from PyQt6.QtGui import QMouseEvent, QGuiApplication, QCursor
 import ctypes
+import weakref
 from ctypes import wintypes
 
 # Costanti Win32 per SetWindowPos
@@ -52,6 +53,50 @@ _user32.SetWindowLongPtrW.restype = ctypes.c_longlong
 _user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_longlong]
 
 
+class _ForegroundHookManager:
+    """Gestore singleton di processo per l'hook WinEvent di foreground (zero hook orfani, weak references)."""
+    _instance = None
+
+    def __init__(self):
+        self.windows = weakref.WeakSet()
+
+        def foreground_callback(hWinEventHook, event, hwnd, idObject, idChild, idThread, dwmsEventTime):
+            try:
+                if event == EVENT_SYSTEM_FOREGROUND:
+                    for w in list(self.windows):
+                        try:
+                            if w.isVisible():
+                                w.force_topmost()
+                        except (RuntimeError, AttributeError):
+                            pass
+            except Exception:
+                pass
+
+        self._cb = WinEventProc(foreground_callback)
+        self._hook = _user32.SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            self._cb,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT
+        )
+
+    @classmethod
+    def register(cls, win):
+        """Registra una finestra presso il gestore hook condiviso."""
+        if cls._instance is None:
+            cls._instance = cls()
+        cls._instance.windows.add(win)
+
+    @classmethod
+    def unregister(cls, win):
+        """Deregistra una finestra dal gestore hook condiviso."""
+        if cls._instance is not None:
+            cls._instance.windows.discard(win)
+
+
 class OverlayWindow(QWidget):
     """Finestra overlay trasparente, senza bordi, always-on-top."""
     
@@ -71,19 +116,12 @@ class OverlayWindow(QWidget):
         self.allow_offscreen = False
         self.safe_overflow = False
 
-        # Riferimento al callback per evitare garbage collection
-        self._win_event_callback = None
-        self._event_hook = None
-
         # Timer fallback per riasserire topmost a intervalli regolari (attivo solo quando visibile)
         self.topmost_timer = QTimer(self)
         self.topmost_timer.timeout.connect(self.force_topmost)
 
-        # Imposta hook per reagire immediatamente ai cambiamenti di focus
-        self.setup_foreground_hook()
-
-        # Connessione infallibile: rimuove l'hook WinEvent alla distruzione dell'oggetto Qt
-        self.destroyed.connect(self.cleanup_hook)
+        # Registrazione presso il gestore singleton WinEvent hook condiviso di processo
+        _ForegroundHookManager.register(self)
         
     def setup_window(self):
         """Configura la finestra come overlay trasparente."""
@@ -107,44 +145,13 @@ class OverlayWindow(QWidget):
             error_code = ctypes.GetLastError()
             print(f"SetWindowPos fallito, codice errore: {error_code}")
 
-    def setup_foreground_hook(self):
-        """Imposta hook WinEvent per reagire ai cambiamenti di finestra in foreground."""
-        def foreground_callback(hWinEventHook, event, hwnd, idObject, idChild, idThread, dwmsEventTime):
-            try:
-                if event == EVENT_SYSTEM_FOREGROUND and self.isVisible():
-                    self.force_topmost()
-            except Exception as e:
-                print(f"Error in foreground_callback: {e}")
-
-        # Crea e mantiene riferimento al callback
-        self._win_event_callback = WinEventProc(foreground_callback)
-
-        self._event_hook = _user32.SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND,
-            EVENT_SYSTEM_FOREGROUND,
-            None,
-            self._win_event_callback,
-            0,
-            0,
-            WINEVENT_OUTOFCONTEXT
-        )
-
-        if not self._event_hook:
-            print("Warning: Failed to set WinEventHook, using timer only")
-
     def cleanup_hook(self):
-        """Pulisce l'hook quando la finestra viene distrutta o chiusa."""
-        if hasattr(self, '_event_hook') and self._event_hook:
-            try:
-                _user32.UnhookWinEvent(self._event_hook)
-            except Exception:
-                pass
-            self._event_hook = None
-        self._win_event_callback = None
+        """Deregistra la finestra dal gestore hook condiviso."""
+        _ForegroundHookManager.unregister(self)
 
     def closeEvent(self, event):
         """Pulisce risorse e ferma il timer alla chiusura."""
-        self.cleanup_hook()
+        _ForegroundHookManager.unregister(self)
         if self.topmost_timer.isActive():
             self.topmost_timer.stop()
         super().closeEvent(event)

@@ -71,9 +71,10 @@ Each release includes the corresponding executable and release notes. Previous r
 
 ## Building Executable
 
-To build the executable using PyInstaller:
+To build the standalone executable, install development dependencies and run the build script:
 
 ```bash
+pip install -r requirements-dev.txt
 python build_pyinstaller.py
 ```
 
